@@ -33,66 +33,24 @@ import (
 // of sensor data are inserted. The LOCATION column is optional and
 // only used for learning/classification.
 func (d *Database) MakeTables() (err error) {
-	sqlStmt := `create table keystore (key text not null primary key, value text);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
-	sqlStmt = `create index keystore_idx on keystore(key);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
-	sqlStmt = `create table sensors (timestamp integer not null primary key, deviceid text, locationid text, unique(timestamp));`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
-	sqlStmt = `CREATE TABLE location_predictions (timestamp integer NOT NULL PRIMARY KEY, prediction TEXT, UNIQUE(timestamp));`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
-	sqlStmt = `CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
-	sqlStmt = `CREATE TABLE locations (id TEXT PRIMARY KEY, name TEXT);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
 
-	sqlStmt = `CREATE TABLE gps (id INTEGER PRIMARY KEY, timestamp INTEGER, mac TEXT, loc TEXT, lat REAL, lon REAL, alt REAL);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
+	sqlStmt := `
+		CREATE TABLE keystore (key text not null primary key, value text);
+		CREATE INDEX keystore_idx ON keystore(key);
 
-	sqlStmt = `create index devices_name on devices (name);`
-	_, err = d.db.Exec(sqlStmt)
-	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
-		logger.Log.Error(err)
-		return
-	}
+		CREATE TABLE sensors (timestamp integer not null primary key, deviceid text, locationid text, unique(timestamp));
+		CREATE INDEX sensors_devices ON sensors (deviceid);
 
-	sqlStmt = `CREATE INDEX sensors_devices ON sensors (deviceid);`
+		CREATE TABLE location_predictions (timestamp integer NOT NULL PRIMARY KEY, prediction TEXT, UNIQUE(timestamp));
+
+		CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT);
+		CREATE INDEX devices_name ON devices (name);
+
+		CREATE TABLE locations (id TEXT PRIMARY KEY, name TEXT);
+
+		CREATE TABLE gps (id INTEGER PRIMARY KEY, timestamp INTEGER, mac TEXT, loc TEXT, lat REAL, lon REAL, alt REAL);
+	`
+
 	_, err = d.db.Exec(sqlStmt)
 	if err != nil {
 		err = errors.Wrap(err, "MakeTables")
