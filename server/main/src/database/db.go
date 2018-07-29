@@ -35,20 +35,20 @@ import (
 func (d *Database) MakeTables() (err error) {
 
 	sqlStmt := `
-		CREATE TABLE keystore (key text not null primary key, value text);
-		CREATE INDEX keystore_idx ON keystore(key);
+		CREATE TABLE IF NOT EXISTS keystore (key text not null primary key, value text);
+		CREATE INDEX IF NOT EXISTS keystore_idx ON keystore(key);
 
-		CREATE TABLE sensors (timestamp integer not null primary key, deviceid text, locationid text, unique(timestamp));
-		CREATE INDEX sensors_devices ON sensors (deviceid);
+		CREATE TABLE IF NOT EXISTS sensors (timestamp integer not null primary key, deviceid text, locationid text, unique(timestamp));
+		CREATE INDEX IF NOT EXISTS sensors_devices ON sensors (deviceid);
 
-		CREATE TABLE location_predictions (timestamp integer NOT NULL PRIMARY KEY, prediction TEXT, UNIQUE(timestamp));
+		CREATE TABLE IF NOT EXISTS location_predictions (timestamp integer NOT NULL PRIMARY KEY, prediction TEXT, UNIQUE(timestamp));
 
-		CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT);
-		CREATE INDEX devices_name ON devices (name);
+		CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT);
+		CREATE INDEX IF NOT EXISTS devices_name ON devices (name);
 
-		CREATE TABLE locations (id TEXT PRIMARY KEY, name TEXT);
+		CREATE TABLE IF NOT EXISTS locations (id TEXT PRIMARY KEY, name TEXT);
 
-		CREATE TABLE gps (id INTEGER PRIMARY KEY, timestamp INTEGER, mac TEXT, loc TEXT, lat REAL, lon REAL, alt REAL);
+		CREATE TABLE IF NOT EXISTS gps (id INTEGER PRIMARY KEY, timestamp INTEGER, mac TEXT, loc TEXT, lat REAL, lon REAL, alt REAL);
 	`
 
 	_, err = d.db.Exec(sqlStmt)
@@ -58,6 +58,7 @@ func (d *Database) MakeTables() (err error) {
 		return
 	}
 
+	// this erases devices, do not call this every time
 	sensorDataSS, _ := stringsizer.New()
 	err = d.Set("sensorDataStringSizer", sensorDataSS.Save())
 	if err != nil {
@@ -891,7 +892,7 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 	}
 	// logger.Log.Debugf("got filelock")
 
-	// check if it is a new database
+	// // check if it is a new database
 	newDatabase := false
 	if _, err := os.Stat(d.name); os.IsNotExist(err) {
 		newDatabase = true
@@ -946,7 +947,8 @@ func (d *Database) Close() (err error) {
 }
 
 func (d *Database) GetAllFromQuery(query string) (s []models.SensorData, err error) {
-	// logger.Log.Debug(query)
+	logger.Log.Debug(query)
+
 	rows, err := d.db.Query(query)
 	if err != nil {
 		err = errors.Wrap(err, "GetAllFromQuery")
@@ -964,6 +966,8 @@ func (d *Database) GetAllFromQuery(query string) (s []models.SensorData, err err
 
 // GetAllFromPreparedQuery
 func (d *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s []models.SensorData, err error) {
+	logger.Log.Debug(query)
+
 	// prepare statement
 	// startQuery := time.Now()
 	stmt, err := d.db.Prepare(query)
