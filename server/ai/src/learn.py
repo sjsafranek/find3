@@ -8,25 +8,14 @@ import pickle
 import gzip
 import operator
 import time
-import logging
+# import logging
 import math
 from threading import Thread
 import functools
 import multiprocessing
 
-# create logger with 'spam_application'
-logger = logging.getLogger('learn')
-logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('learn.log')
-fh.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter(
-    '%(asctime)s - [%(name)s/%(funcName)s] - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
-logger.addHandler(fh)
-logger.addHandler(ch)
+from log import NewLogger
+logger = NewLogger("learn")
 
 import numpy
 from sklearn.feature_extraction import DictVectorizer
@@ -76,22 +65,27 @@ def timeout(timeout):
 class AI(object):
 
     def __init__(self, family, path_to_data):
-        self.logger = logging.getLogger('learn.AI')
+        # self.logger = logging.getLogger('learn.AI')
+        self.logger = NewLogger("learn.AI")
         self.naming = {'from': {}, 'to': {}}
         self.family = family
         self.path_to_data = path_to_data
 
     def classify(self, sensor_data):
+        # print(self.header)
+        # print(sensor_data)
+
         header = self.header[1:]
         is_unknown = True
         csv_data = numpy.zeros(len(header))
         for sensorType in sensor_data['s']:
-            for sensor in sensor_data['s'][sensorType]:
-                sensorName = sensorType + "-" + sensor
-                if sensorName in header:
-                    is_unknown = False
-                    csv_data[header.index(sensorName)] = sensor_data[
-                        's'][sensorType][sensor]
+            if sensor_data['s'][sensorType]:
+                for sensor in sensor_data['s'][sensorType]:
+                    sensorName = sensorType + "-" + sensor
+                    # print(sensorName, self.header)
+                    if sensorName in header:
+                        is_unknown = False
+                        csv_data[header.index(sensorName)] = sensor_data['s'][sensorType][sensor]
         self.headerClassify = header
         self.csv_dataClassify = csv_data.reshape(1, -1)
         payload = {'location_names': self.naming['to'], 'predictions': []}
@@ -105,6 +99,9 @@ class AI(object):
 
         for i, _ in enumerate(self.algorithms.keys()):
             threads[i].join()
+
+        # print(csv_data)
+        # print(self.results)
 
         for result in self.results:
             if result != None:

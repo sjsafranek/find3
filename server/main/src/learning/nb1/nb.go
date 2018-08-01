@@ -5,8 +5,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/database"
+	"github.com/schollz/find4/server/main/src/models"
 )
 
 // Algorithm defines the basic structure
@@ -24,7 +24,7 @@ func New() *Algorithm {
 }
 
 // Fit will take the data and learn it
-func (a *Algorithm) Fit(datas []models.SensorData) (err error) {
+func (a *Algorithm) Fit(db *database.Database, datas []models.SensorData) (err error) {
 	if len(datas) == 0 {
 		err = errors.New("no data")
 		return
@@ -48,26 +48,16 @@ func (a *Algorithm) Fit(datas []models.SensorData) (err error) {
 			}
 		}
 	}
-	db, err := database.Open(datas[0].Family)
-	if err != nil {
-		return
-	}
-	defer db.Close()
+
 	err = db.Set("NB1", a.Data)
 	return
 }
 
 // Classify will classify the specified data
-func (a *Algorithm) Classify(data models.SensorData) (pl PairList, err error) {
+func (a *Algorithm) Classify(db *database.Database, data models.SensorData) (pl PairList, err error) {
 	// load data if not already
 	if !a.isLoaded {
-		db, err2 := database.Open(data.Family, true)
-		if err2 != nil {
-			err = err2
-			return
-		}
 		err = db.Get("NB1", &a.Data)
-		db.Close()
 		if err != nil {
 			return
 		}

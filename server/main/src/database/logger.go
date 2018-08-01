@@ -1,21 +1,17 @@
 package database
 
-import "github.com/schollz/find3/server/main/src/logging"
+// import "github.com/schollz/find3/server/main/src/logging"
+import "github.com/sjsafranek/ligneous"
 
 var DebugMode bool
-var logger *logging.SeelogWrapper
+var logger ligneous.SeelogWrapper
 
 func init() {
-	var err error
-	logger, err = logging.New()
-	if err != nil {
-		panic(err)
-	}
+	logger = ligneous.New()
 	Debug(false)
 }
 
 func Debug(debugMode bool) {
-	DebugMode = debugMode
 	if debugMode {
 		logger.SetLevel("debug")
 	} else {

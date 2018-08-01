@@ -13,18 +13,19 @@ import (
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/pkg/errors"
-	"github.com/schollz/find3/server/main/src/api"
-	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/logging"
-	"github.com/schollz/find3/server/main/src/models"
-	"github.com/schollz/find3/server/main/src/utils"
+	"github.com/schollz/find4/server/main/src/api"
+	"github.com/schollz/find4/server/main/src/database"
+	// "github.com/schollz/find4/server/main/src/logging"
+	"github.com/schollz/find4/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/utils"
+	"github.com/sjsafranek/ligneous"
 )
 
 var (
 	// Server is the address of the broker to use for MQTT
 	Server                   = "localhost:1883"
 	Debug                    = false
-	logger                   *logging.SeelogWrapper
+	logger                   ligneous.SeelogWrapper
 	Existing                 = false
 	IsSetup                  = false
 	AdminUser                = "zack"
@@ -37,7 +38,7 @@ var (
 )
 
 func Setup() (err error) {
-	logger, _ = logging.New()
+	logger = ligneous.New()
 	if Debug {
 		logger.SetLevel("debug")
 	} else {

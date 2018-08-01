@@ -1,68 +1,66 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
-	"net/http"
 	"os"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/learning/nb1"
-	"github.com/schollz/find3/server/main/src/learning/nb2"
-	"github.com/schollz/find3/server/main/src/models"
-	"github.com/schollz/find3/server/main/src/utils"
+	"github.com/pkg/errors"
+	"github.com/schollz/find4/server/main/src/database"
+	"github.com/schollz/find4/server/main/src/learning/nb1"
+	"github.com/schollz/find4/server/main/src/learning/nb2"
+	"github.com/schollz/find4/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/utils"
 )
 
 // Calibrate will send the sensor data for a specific family to the machine learning algorithms
-func Calibrate(family string, crossValidation ...bool) (err error) {
-	// gather the data
-	db, err := database.Open(family, true)
-	if err != nil {
-		return
-	}
-	datas, err := db.GetAllForClassification()
-	if err != nil {
-		return
-	}
-	db.Close()
+func Calibrate(db *database.Database, family string, crossValidation ...bool) (err error) {
 
-	datasLearn, datasTest, err := splitDataForLearning(datas, crossValidation...)
-	if err != nil {
-		return
-	}
+	db.GetAllForClassification(func(datas []models.SensorData, err error) {
 
-	// do the Golang naive bayes fitting
-	nb := nb1.New()
-	logger.Log.Debugf("naive bayes1 fitting")
-	errFit := nb.Fit(datasLearn)
-	if errFit != nil {
-		logger.Log.Error(errFit)
-	}
+		if err != nil {
+			return
+		}
 
-	// do the Golang naive bayes2 fitting
-	nbFit2 := nb2.New()
-	logger.Log.Debugf("naive bayes2 fitting")
-	errFit = nbFit2.Fit(datasLearn)
-	if errFit != nil {
-		logger.Log.Error(errFit)
-	}
+		datasLearn, datasTest, err := splitDataForLearning(datas, crossValidation...)
+		if err != nil {
+			return
+		}
 
-	// do the python learning
-	err = learnFromData(family, datasLearn)
-	if err != nil {
-		return
-	}
+		// do the Golang naive bayes fitting
+		nb := nb1.New()
+		logger.Log.Debugf("naive bayes1 fitting")
+		errFit := nb.Fit(db, datasLearn)
+		if errFit != nil {
+			logger.Log.Error(errFit)
+		}
 
-	if len(crossValidation) > 0 && crossValidation[0] {
-		go findBestAlgorithm(datasTest)
-	}
+		// do the Golang naive bayes2 fitting
+		nbFit2 := nb2.New()
+		logger.Log.Debugf("naive bayes2 fitting")
+		errFit = nbFit2.Fit(db, datasLearn)
+		if errFit != nil {
+			logger.Log.Error(errFit)
+		}
+
+		// do the python learning
+		err = learnFromData(family, datasLearn)
+		if err != nil {
+			panic(err)
+			return
+		}
+
+		if len(crossValidation) > 0 && crossValidation[0] {
+			go findBestAlgorithm(db, datasTest)
+		}
+
+	})
+
 	return
 }
 
@@ -145,23 +143,21 @@ func learnFromData(family string, datas []models.SensorData) (err error) {
 	}
 	defer os.Remove(path.Join(p.DataFolder, p.CSVFile))
 
-	url := "http://localhost:" + AIPort + "/learn"
 	bPayload, err := json.Marshal(p)
 	if err != nil {
 		return
 	}
-	logger.Log.Debugf("sending payload: %s", bPayload)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bPayload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := httpClient.Do(req)
-	if err != nil {
+
+	body, err := aiSendAndRecieve(fmt.Sprintf(`{"method": "learn", "data":%v}`, string(bPayload)))
+	if nil != err {
+		err = errors.Wrap(err, "problem sending message to ai server")
 		return
 	}
-	defer resp.Body.Close()
 
 	var target AnalysisResponse
-	err = json.NewDecoder(resp.Body).Decode(&target)
+	err = json.Unmarshal([]byte(body), &target)
 	if err != nil {
+		err = errors.Wrap(err, "problem decoding response")
 		return
 	}
 
@@ -174,7 +170,7 @@ func learnFromData(family string, datas []models.SensorData) (err error) {
 	return
 }
 
-func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]map[string]models.BinaryStats, err error) {
+func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algorithmEfficacy map[string]map[string]models.BinaryStats, err error) {
 	if len(datas) == 0 {
 		err = errors.New("no data specified")
 		return
@@ -197,7 +193,7 @@ func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]
 	for w := 0; w < workers; w++ {
 		go func(id int, jobs <-chan Job, results chan<- Result) {
 			for job := range jobs {
-				aidata, err := AnalyzeSensorData(job.data)
+				aidata, err := AnalyzeSensorData(db, job.data)
 				if err != nil {
 					logger.Log.Warnf("%s: %+v", err.Error(), job.data)
 				}
@@ -237,6 +233,9 @@ func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]
 				logger.Log.Error(err)
 				return
 			}
+
+			logger.Log.Criticalf("DEBUGGING %v", predictionAnalysis)
+
 			guessedLocation := aidata.LocationNames[prediction.Locations[0]]
 			predictionAnalysis[prediction.Name][correctLocation][guessedLocation]++
 		}
@@ -340,14 +339,6 @@ func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]
 		accuracyBreakdown[loc] = accuracyBreakdown[loc] / accuracyBreakdownTotal[loc]
 		logger.Log.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
 	}
-
-	// gather the data
-	db, err := database.Open(datas[0].Family)
-	if err != nil {
-		logger.Log.Error(err)
-		return
-	}
-	defer db.Close()
 
 	err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
 	if err != nil {

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/database"
+	"github.com/schollz/find4/server/main/src/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,17 +30,17 @@ var j = `{
 		 },
 		 "bluetooth":{
 				"aa:00:cc:11:ee":-42,
-				"ff:22:hh:33:jj":-50        
+				"ff:22:hh:33:jj":-50
 		 },
 		 "temperature":{
 				"sensor1":12,
-				"sensor2":20       
+				"sensor2":20
 		 },
 		 "accelerometer":{
 				"x":-1.11,
 				"y":2.111,
-				"z":1.23   
-		 }      
+				"z":1.23
+		 }
 	}
 }`
 
@@ -57,17 +57,17 @@ var j2 = `{
 		 },
 		 "bluetooth":{
 				"aa:00:cc:11:ee":-40,
-				"ff:22:hh:33:jj":-45        
+				"ff:22:hh:33:jj":-45
 		 },
 		 "temperature":{
 				"sensor1":10,
-				"sensor2":32       
+				"sensor2":32
 		 },
 		 "accelerometer":{
 				"x":-2.11,
 				"y":4.111,
-				"z":0.23   
-		 }      
+				"z":0.23
+		 }
 	}
 }`
 

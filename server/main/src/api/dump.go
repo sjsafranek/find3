@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/schollz/find3/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/models"
 
-	"github.com/schollz/find3/server/main/src/database"
+	"github.com/schollz/find4/server/main/src/database"
 )
 
 func Dump(family string) (err error) {
@@ -19,31 +19,32 @@ func Dump(family string) (err error) {
 		return
 	}
 	defer db.Close()
-	datasLearn, err := db.GetAllForClassification()
-	if err != nil {
-		return
-	}
-	datasTrack, err := db.GetAllNotForClassification()
-	if err != nil {
-		return
-	}
 
-	if len(datasLearn) == 0 && len(datasTrack) == 0 {
-		err = errors.New("no data to dump for " + family)
-	}
-	if len(datasLearn) > 0 {
-		err = writeDatas(family, "learn", datasLearn)
+	db.GetAllForClassification(func(datasLearn []models.SensorData, err error) {
 		if err != nil {
 			return
 		}
-	}
-	if len(datasTrack) > 0 {
-		err = writeDatas(family, "track", datasTrack)
-		if err != nil {
-			return
-		}
-
-	}
+		db.GetAllNotForClassification(func(datasTrack []models.SensorData, err error) {
+			if err != nil {
+				return
+			}
+			if len(datasLearn) == 0 && len(datasTrack) == 0 {
+				err = errors.New("no data to dump for " + family)
+			}
+			if len(datasLearn) > 0 {
+				err = writeDatas(family, "learn", datasLearn)
+				if err != nil {
+					return
+				}
+			}
+			if len(datasTrack) > 0 {
+				err = writeDatas(family, "track", datasTrack)
+				if err != nil {
+					return
+				}
+			}
+		})
+	})
 
 	return
 }

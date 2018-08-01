@@ -16,17 +16,17 @@ update:
 	rm -rf vendor/golang.org/x/text/internal/testtext/
 	rm -rf vendor/golang.org/x/net/nettest
 	go build -v -a
-	
+
 release:
 	docker pull karalabe/xgo-latest
 	go get github.com/karalabe/xgo
-	mkdir -p bin 
+	mkdir -p bin
 	xgo -go "1.9.2" -dest bin ${LDFLAGS} -targets linux/amd64,linux/arm-6,darwin/amd64,windows/amd64 github.com/schollz/kiki
 	# cd bin && upx --brute kiki-linux-amd64
 
 
 server1:
-	go build -v 
+	go build -v
 	./main -debug
 
 docs:

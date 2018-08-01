@@ -10,15 +10,21 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"crypto/md5"
+	"encoding/hex"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
-	"github.com/schollz/find3/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/models"
 	"github.com/schollz/sqlite3dump"
-	"github.com/schollz/stringsizer"
+	// "github.com/schollz/stringsizer"
+	// "github.com/satori/go.uuid"
 )
 
 // MakeTables creates two tables, a `keystore` table:
@@ -32,114 +38,139 @@ import (
 // the sensor table will dynamically create more columns as new types
 // of sensor data are inserted. The LOCATION column is optional and
 // only used for learning/classification.
-func (d *Database) MakeTables() (err error) {
-
-	sqlStmt := `
-		CREATE TABLE IF NOT EXISTS keystore (key text not null primary key, value text);
-		CREATE INDEX IF NOT EXISTS keystore_idx ON keystore(key);
-
-		CREATE TABLE IF NOT EXISTS sensors (timestamp integer not null primary key, deviceid text, locationid text, unique(timestamp));
-		CREATE INDEX IF NOT EXISTS sensors_devices ON sensors (deviceid);
-
-		CREATE TABLE IF NOT EXISTS location_predictions (timestamp integer NOT NULL PRIMARY KEY, prediction TEXT, UNIQUE(timestamp));
-
-		CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT);
-		CREATE INDEX IF NOT EXISTS devices_name ON devices (name);
-
-		CREATE TABLE IF NOT EXISTS locations (id TEXT PRIMARY KEY, name TEXT);
-
-		CREATE TABLE IF NOT EXISTS gps (id INTEGER PRIMARY KEY, timestamp INTEGER, mac TEXT, loc TEXT, lat REAL, lon REAL, alt REAL);
-	`
-
-	_, err = d.db.Exec(sqlStmt)
+func (self *Database) MakeTables() (err error) {
+	_, err = self.db.Exec(TABLES_SQL)
 	if err != nil {
 		err = errors.Wrap(err, "MakeTables")
 		logger.Log.Error(err)
 		return
 	}
-
-	// this erases devices, do not call this every time
-	sensorDataSS, _ := stringsizer.New()
-	err = d.Set("sensorDataStringSizer", sensorDataSS.Save())
-	if err != nil {
-		return
-	}
 	return
 }
 
-// Columns will list the columns
-func (d *Database) Columns() (columns []string, err error) {
-	rows, err := d.db.Query("SELECT * FROM sensors LIMIT 1")
+func (self *Database) PrepareQuery(query string) (*sql.Stmt, error) {
+	logger.Log.Debug(query)
+	stmt, err := self.db.Prepare(query)
 	if err != nil {
-		err = errors.Wrap(err, "Columns")
-		return
+		panic(err)
+		err = errors.Wrap(err, "problem preparing SQL")
 	}
-	columns, err = rows.Columns()
-	rows.Close()
+	return stmt, err
+}
+
+func (self *Database) runQuery(stmt *sql.Stmt) (*sql.Rows, error) {
+	rows, err := stmt.Query()
 	if err != nil {
-		err = errors.Wrap(err, "Columns")
-		return
+		panic(err)
+		err = errors.Wrap(err, "problem executing query")
 	}
-	return
+	return rows, err
+}
+
+func (self *Database) prepareAndRunQueryWithCallback(query string, clbk func(*sql.Rows) error) error {
+	stmt, err := self.PrepareQuery(query)
+	if nil != err {
+		return err
+	}
+	defer stmt.Close()
+	rows, err := self.runQuery(stmt)
+	if nil != err {
+		return err
+	}
+	defer rows.Close()
+	return clbk(rows)
+}
+
+func (self *Database) runQuerySync(clbk func(string)) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	self.requestQueue <- func(query_id string) {
+		defer wg.Done()
+		clbk(query_id)
+	}
+	wg.Wait()
+}
+
+func (self *Database) runQueryAsync(clbk func(string)) {
+	self.requestQueue <- func(query_id string) {
+		clbk(query_id)
+	}
+}
+
+func (self *Database) runReadQuery(clbk func(string, *Database)) {
+	query_id := self.getQId("r")
+
+	// open database for reading
+	reader, err := Open(self.family)
+	if nil != err {
+		Fatal(err, "Could not open database")
+	}
+	defer reader.Close()
+
+	// run callback
+	clbk(query_id, reader)
 }
 
 // Get will retrieve the value associated with a key.
-func (d *Database) Get(key string, v interface{}) (err error) {
-	stmt, err := d.db.Prepare("select value from keystore where key = ?")
-	if err != nil {
-		return errors.Wrap(err, "problem preparing SQL")
-	}
-	defer stmt.Close()
-	var result string
-	err = stmt.QueryRow(key).Scan(&result)
-	if err != nil {
-		return errors.Wrap(err, "problem getting key")
-	}
-
-	err = json.Unmarshal([]byte(result), &v)
-	if err != nil {
-		return
-	}
-	// logger.Log.Debugf("got %s from '%s'", string(result), key)
-	return
+// channel event listener makes database call synchronous
+func (self *Database) Get(key string, v interface{}) error {
+	var err error
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery("SELECT value FROM keystore WHERE key = ?")
+		if nil != err {
+			return
+		}
+		defer stmt.Close()
+		var result string
+		err = stmt.QueryRow(key).Scan(&result)
+		if err != nil {
+			err = errors.Wrap(err, "problem getting key")
+			return
+		}
+		err = json.Unmarshal([]byte(result), &v)
+	})
+	return err
 }
 
 // Set will set a value in the database, when using it like a keystore.
-func (d *Database) Set(key string, value interface{}) (err error) {
+func (self *Database) Set(key string, value interface{}) (err error) {
 	var b []byte
 	b, err = json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
-	stmt, err := tx.Prepare("insert or replace into keystore(key,value) values (?, ?)")
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
-	defer stmt.Close()
 
-	_, err = stmt.Exec(key, string(b))
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
+	self.runQueryAsync(func(query_id string) {
+		tx, err := self.db.Begin()
+		if err != nil {
+			Fatal(err, "Set Begin")
+		}
 
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
+		stmt, err := tx.Prepare("INSERT OR REPLACE INTO keystore(key,value) VALUES (?, ?)")
+		if err != nil {
+			Fatal(err, "Set Prepare")
+		}
+		defer stmt.Close()
 
-	// logger.Log.Debugf("set '%s' to '%s'", key, string(b))
+		_, err = stmt.Exec(key, string(b))
+		if err != nil {
+			Fatal(err, "Set Execute")
+		}
+
+		err = tx.Commit()
+		if err != nil {
+			Fatal(err, "Set Commit")
+		}
+	})
+
 	return
 }
 
 // Dump will output the string version of the database
-func (d *Database) Dump() (dumped string, err error) {
+func (self *Database) Dump() (dumped string, err error) {
 	var b bytes.Buffer
 	out := bufio.NewWriter(&b)
-	err = sqlite3dump.Dump(d.name, out)
+	err = sqlite3dump.Dump(self.name, out)
 	if err != nil {
 		return
 	}
@@ -149,586 +180,449 @@ func (d *Database) Dump() (dumped string, err error) {
 }
 
 // AddPrediction will insert or update a prediction in the database
-func (d *Database) AddPrediction(timestamp int64, aidata []models.LocationPrediction) (err error) {
+func (self *Database) AddPrediction(timestamp int64, aidata []models.LocationPrediction) (err error) {
 	// make sure we have a prediction
 	if len(aidata) == 0 {
 		err = errors.New("no predictions to add")
 		return
 	}
 
-	// truncate to two digits
-	for i := range aidata {
-		aidata[i].Probability = float64(int64(float64(aidata[i].Probability)*100)) / 100
-	}
+	self.runQueryAsync(func(query_id string) {
+		tx, err := self.db.Begin()
+		if err != nil {
+			Fatal(err, "AddPrediction Begin")
+		}
 
-	var b []byte
-	b, err = json.Marshal(aidata)
-	if err != nil {
-		return err
-	}
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "begin AddPrediction")
-	}
-	stmt, err := tx.Prepare("insert or replace into location_predictions (timestamp,prediction) values (?, ?)")
-	if err != nil {
-		return errors.Wrap(err, "stmt AddPrediction")
-	}
-	defer stmt.Close()
+		query := "INSERT OR REPLACE INTO location_predictions (timestamp, locationid, probability) VALUES (?, ?, ?)"
+		logger.Log.Debug(query)
+		stmt, err := tx.Prepare(query)
+		if err != nil {
+			Fatal(err, "AddPrediction Prepare")
+		}
+		defer stmt.Close()
 
-	_, err = stmt.Exec(timestamp, string(b))
-	if err != nil {
-		return errors.Wrap(err, "exec AddPrediction")
-	}
+		// truncate to two digits
+		for i := range aidata {
+			aidata[i].Probability = float64(int64(float64(aidata[i].Probability)*100)) / 100
+			_, err = stmt.Exec(timestamp, aidata[i].Location, aidata[i].Probability)
+			if err != nil {
+				Fatal(err, "AddPrediction Execute")
+			}
+		}
 
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "commit AddPrediction")
-	}
+		err = tx.Commit()
+		if err != nil {
+			Fatal(err, "AddPrediction Commit")
+		}
+	})
+
 	return
 }
 
 // GetPrediction will retrieve models.LocationAnalysis associated with that timestamp
-func (d *Database) GetPrediction(timestamp int64) (aidata []models.LocationPrediction, err error) {
-	stmt, err := d.db.Prepare("SELECT prediction FROM location_predictions WHERE timestamp = ?")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	defer stmt.Close()
-	var result string
-	err = stmt.QueryRow(timestamp).Scan(&result)
-	if err != nil {
-		err = errors.Wrap(err, "problem getting key")
-		return
-	}
+func (self *Database) GetPrediction(timestamp int64) (aidata []models.LocationPrediction, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery(`
+		SELECT '[' ||
+			(SELECT IFNULL(GROUP_CONCAT(prediction), '') FROM (
+				SELECT ` + LOCATION_PREDICTION_SQL + ` AS prediction
+			 	FROM location_predictions WHERE timestamp = ?
+			))
+		|| ']'`)
 
-	err = json.Unmarshal([]byte(result), &aidata)
-	if err != nil {
-		return
-	}
-	// logger.Log.Debugf("got %s from '%s'", string(result), key)
+		if err != nil {
+			return
+		}
+		defer stmt.Close()
+		var result string
+		err = stmt.QueryRow(timestamp).Scan(&result)
+		if err != nil {
+			err = errors.Wrap(err, "problem getting key")
+			return
+		}
+
+		err = json.Unmarshal([]byte(result), &aidata)
+		if err != nil {
+			return
+		}
+	})
 	return
 }
 
 // AddSensor will insert a sensor data into the database
 // TODO: AddSensor should be special case of AddSensors
-func (d *Database) AddSensor(s models.SensorData) (err error) {
-	startTime := time.Now()
-	// determine the current table coluss
-	oldColumns := make(map[string]struct{})
-	columnList, err := d.Columns()
-	if err != nil {
-		return
-	}
-	for _, column := range columnList {
-		oldColumns[column] = struct{}{}
-	}
-
-	// get string sizer
-	var sensorDataStringSizerString string
-	err = d.Get("sensorDataStringSizer", &sensorDataStringSizerString)
-	if err != nil {
-		return
-	}
-	sensorDataSS, err := stringsizer.New(sensorDataStringSizerString)
-	if err != nil {
-		return
-	}
-	previousCurrent := sensorDataSS.Current
-
-	// setup the database
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "AddSensor")
-	}
-
-	// first add new columns in the sensor data
-	deviceID, err := d.AddName("devices", s.Device)
-	if err != nil {
-		return errors.Wrap(err, "problem getting device ID")
-	}
-	locationID := ""
-	if len(s.Location) > 0 {
-		locationID, err = d.AddName("locations", s.Location)
+func (self *Database) AddSensor(s models.SensorData) (err error) {
+	self.runQueryAsync(func(query_id string) {
+		// setup the database
+		tx, err := self.db.Begin()
 		if err != nil {
-			return errors.Wrap(err, "problem getting location ID")
+			Fatal(err, "AddSensor Begin")
 		}
-	}
-	args := make([]interface{}, 3)
-	args[0] = s.Timestamp
-	args[1] = deviceID
-	args[2] = locationID
-	argsQ := []string{"?", "?", "?"}
-	for sensor := range s.Sensors {
-		if _, ok := oldColumns[sensor]; !ok {
-			stmt, err := tx.Prepare("alter table sensors add column " + sensor + " text")
-			if err != nil {
-				return errors.Wrap(err, "AddSensor, adding column")
-			}
-			_, err = stmt.Exec()
-			if err != nil {
-				return errors.Wrap(err, "AddSensor, adding column")
-			}
-			logger.Log.Debugf("adding column %s", sensor)
-			columnList = append(columnList, sensor)
-			stmt.Close()
+
+		device_id := s.Device
+		location_id := ""
+		if len(s.Location) > 0 {
+			location_id = s.Location
 		}
-	}
 
-	// organize arguments in the correct order
-	for _, sensor := range columnList {
-		if _, ok := s.Sensors[sensor]; !ok {
-			continue
-		}
-		argsQ = append(argsQ, "?")
-		args = append(args, sensorDataSS.ShrinkMapToString(s.Sensors[sensor]))
-	}
-
-	// only use the columns that are in the payload
-	newColumnList := make([]string, len(columnList))
-	j := 0
-	for i, c := range columnList {
-		if i >= 3 {
-			if _, ok := s.Sensors[c]; !ok {
-				continue
-			}
-		}
-		newColumnList[j] = c
-		j++
-	}
-	newColumnList = newColumnList[:j]
-
-	sqlStatement := "insert or replace into sensors(" + strings.Join(newColumnList, ",") + ") values (" + strings.Join(argsQ, ",") + ")"
-	stmt, err := tx.Prepare(sqlStatement)
-	// logger.Log.Debug("columns", columnList)
-	// logger.Log.Debug("args", args)
-	if err != nil {
-		return errors.Wrap(err, "AddSensor, prepare "+sqlStatement)
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(args...)
-	if err != nil {
-		return errors.Wrap(err, "AddSensor, execute")
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "AddSensor")
-	}
-
-	// update the map key slimmer
-	if previousCurrent != sensorDataSS.Current {
-		err = d.Set("sensorDataStringSizer", sensorDataSS.Save())
+		sqlStatement := "INSERT OR REPLACE INTO sensors(timestamp, deviceid, locationid, sensor_type, sensor) VALUES (?, ?, ?, ?, ?)"
+		stmt, err := tx.Prepare(sqlStatement)
 		if err != nil {
-			return
+			Fatal(err, "AddSensor Prepare")
 		}
-	}
+		defer stmt.Close()
 
-	logger.Log.Debugf("[%s] inserted sensor data, %s", s.Family, time.Since(startTime))
+		for sensor_type, sensor := range s.Sensors {
+			data, _ := json.Marshal(sensor)
+			_, err = stmt.Exec(s.Timestamp, device_id, location_id, sensor_type, string(data))
+			if err != nil {
+				Fatal(err, "AddSensor Execute")
+			}
+		}
+
+		err = tx.Commit()
+		if err != nil {
+			Fatal(err, "AddSensor Commit")
+		}
+	})
 	return
-
 }
 
 // GetSensorFromTime will return a sensor data for a given timestamp
-func (d *Database) GetSensorFromTime(timestamp interface{}) (s models.SensorData, err error) {
-	sensors, err := d.GetAllFromPreparedQuery("SELECT * FROM sensors WHERE timestamp = ?", timestamp)
-	if err != nil {
-		err = errors.Wrap(err, "GetSensorFromTime")
-	} else {
+func (self *Database) GetSensorFromTime(timestamp interface{}) (s models.SensorData, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		sensors, err := db.GetAllFromPreparedQuery("SELECT "+SENSOR_SQL+" FROM sensors WHERE timestamp = ?", timestamp)
+		if err != nil {
+			err = errors.Wrap(err, "GetSensorFromTime")
+		}
 		s = sensors[0]
-	}
+	})
 	return
 }
 
 // Get will retrieve the value associated with a key.
-func (d *Database) GetLastSensorTimestamp() (timestamp int64, err error) {
-	stmt, err := d.db.Prepare("SELECT timestamp FROM sensors ORDER BY timestamp DESC LIMIT 1")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow().Scan(&timestamp)
-	if err != nil {
-		err = errors.Wrap(err, "problem getting key")
-	}
+func (self *Database) GetLastSensorTimestamp() (timestamp int64, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery("SELECT timestamp FROM sensors ORDER BY timestamp DESC LIMIT 1")
+		if nil != err {
+			return
+		}
+		defer stmt.Close()
+		err = stmt.QueryRow().Scan(&timestamp)
+		if err != nil {
+			err = errors.Wrap(err, "problem getting key")
+		}
+	})
 	return
 }
 
 // Get will retrieve the value associated with a key.
-func (d *Database) TotalLearnedCount() (count int64, err error) {
-	stmt, err := d.db.Prepare("SELECT count(timestamp) FROM sensors WHERE locationid != ''")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow().Scan(&count)
-	if err != nil {
-		err = errors.Wrap(err, "problem getting key")
-	}
+func (self *Database) TotalLearnedCount() (count int64, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery("SELECT count(timestamp) FROM sensors WHERE locationid != ''")
+		if err != nil {
+			return
+		}
+
+		defer stmt.Close()
+		err = stmt.QueryRow().Scan(&count)
+		if err != nil {
+			err = errors.Wrap(err, "problem getting key")
+		}
+	})
 	return
 }
 
+// TODO
+//  - single transaction
 // GetSensorFromGreaterTime will return a sensor data for a given timeframe
-func (d *Database) GetSensorFromGreaterTime(timeBlockInMilliseconds int64) (sensors []models.SensorData, err error) {
-	latestTime, err := d.GetLastSensorTimestamp()
-	if err != nil {
-		return
-	}
-	minimumTimestamp := latestTime - timeBlockInMilliseconds
-	sensors, err = d.GetAllFromPreparedQuery("SELECT * FROM (SELECT * FROM sensors WHERE timestamp > ? GROUP BY deviceid ORDER BY timestamp DESC)", minimumTimestamp)
+func (self *Database) GetSensorFromGreaterTime(timeBlockInMilliseconds int64) (sensors []models.SensorData, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		latestTime, err := db.GetLastSensorTimestamp()
+		if err != nil {
+			return
+		}
+		minimumTimestamp := latestTime - timeBlockInMilliseconds
+		sensors, err = db.GetAllFromPreparedQuery("SELECT "+SENSOR_SQL+" FROM (SELECT * FROM sensors WHERE timestamp > ? GROUP BY deviceid ORDER BY timestamp DESC)", minimumTimestamp)
+	})
 	return
 }
 
-func (d *Database) NumDevices() (num int, err error) {
-	stmt, err := d.db.Prepare("select count(id) from devices")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow().Scan(&num)
-	if err != nil {
-		err = errors.Wrap(err, "problem getting key")
-	}
+func (self *Database) NumDevices() (num int, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery("SELECT COUNT(DISTINCT deviceid) FROM sensors WHERE deviceid != ''")
+		if err != nil {
+			return
+		}
+
+		defer stmt.Close()
+		err = stmt.QueryRow().Scan(&num)
+		if err != nil {
+			err = errors.Wrap(err, "problem getting key")
+		}
+	})
 	return
 }
 
-func (d *Database) GetDeviceFirstTimeFromDevices(devices []string) (firstTime map[string]time.Time, err error) {
+func (self *Database) GetDeviceFirstTimeFromDevices(devices []string) (firstTime map[string]time.Time, err error) {
 	firstTime = make(map[string]time.Time)
-	query := fmt.Sprintf("select n,t from (select devices.name as n,sensors.timestamp as t from sensors inner join devices on sensors.deviceid=devices.id WHERE devices.name IN ('%s') order by timestamp desc) group by n", strings.Join(devices, "','"))
 
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
+	if 0 == len(devices) {
 		return
 	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var name string
-		var ts int64
-		err = rows.Scan(&name, &ts)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		// if _, ok := firstTime[name]; !ok {
-		firstTime[name] = time.Unix(0, ts*1000000).UTC()
-		// }
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(fmt.Sprintf(`
+	SELECT n,t FROM (
+		SELECT
+			deviceid AS n,
+			timestamp AS t
+		FROM sensors
+		WHERE deviceid IN ('%s')
+		ORDER BY timestamp desc
+	)
+	GROUP BY n`, strings.Join(devices, "','")),
+			func(rows *sql.Rows) error {
+				for rows.Next() {
+					var name string
+					var ts int64
+					err = rows.Scan(&name, &ts)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+
+					firstTime[name] = time.Unix(0, ts*1000000).UTC()
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
-func (d *Database) GetDeviceFirstTime() (firstTime map[string]time.Time, err error) {
-
+func (self *Database) GetDeviceFirstTime() (firstTime map[string]time.Time, err error) {
 	firstTime = make(map[string]time.Time)
-	query := "select n,t from (select devices.name as n,sensors.timestamp as t from sensors inner join devices on sensors.deviceid=devices.id order by timestamp desc) group by n"
-	// query := "select devices.name,sensors.timestamp from sensors inner join devices on sensors.deviceid=devices.id order by timestamp desc"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var name string
-		var ts int64
-		err = rows.Scan(&name, &ts)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		// if _, ok := firstTime[name]; !ok {
-		firstTime[name] = time.Unix(0, ts*1000000).UTC()
-		// }
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(`
+		SELECT
+			n,t
+		FROM (
+			SELECT
+				deviceid AS n,
+				sensors.timestamp AS t
+			FROM sensors
+			ORDER BY timestamp desc) GROUP BY n`,
+			func(rows *sql.Rows) error {
+				for rows.Next() {
+					var name string
+					var ts int64
+					err = rows.Scan(&name, &ts)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+
+					firstTime[name] = time.Unix(0, ts*1000000).UTC()
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
-func (d *Database) GetDeviceCountsFromDevices(devices []string) (counts map[string]int, err error) {
+func (self *Database) GetDeviceCountsFromDevices(devices []string) (counts map[string]int, err error) {
 
 	counts = make(map[string]int)
-	query := fmt.Sprintf("select devices.name,count(sensors.timestamp) as num from sensors inner join devices on sensors.deviceid=devices.id WHERE devices.name in ('%s') group by sensors.deviceid", strings.Join(devices, "','"))
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var name string
-		var count int
-		err = rows.Scan(&name, &count)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		counts[name] = count
+	if 0 == len(devices) {
+		return
 	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(fmt.Sprintf(`
+			SELECT
+				deviceid,
+				COUNT(timestamp) AS num
+			FROM sensors
+			WHERE deviceid IN ('%s')
+			GROUP BY deviceid`, strings.Join(devices, "','")),
+			func(rows *sql.Rows) error {
+				for rows.Next() {
+					var name string
+					var count int
+					err = rows.Scan(&name, &count)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+					counts[name] = count
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
-func (d *Database) GetDeviceCounts() (counts map[string]int, err error) {
+func (self *Database) GetDeviceCounts() (counts map[string]int, err error) {
 	counts = make(map[string]int)
-	query := "select devices.name,count(sensors.timestamp) as num from sensors inner join devices on sensors.deviceid=devices.id group by sensors.deviceid"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var name string
-		var count int
-		err = rows.Scan(&name, &count)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		counts[name] = count
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(`
+	SELECT
+		deviceid,
+		COUNT(sensors.timestamp) AS num
+	FROM sensors
+	GROUP BY sensors.deviceid`,
+			func(rows *sql.Rows) error {
+				for rows.Next() {
+					var name string
+					var count int
+					err = rows.Scan(&name, &count)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+					counts[name] = count
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
-func (d *Database) GetLocationCounts() (counts map[string]int, err error) {
+func (self *Database) GetLocationCounts() (counts map[string]int, err error) {
 	counts = make(map[string]int)
-	query := "SELECT locations.name,count(sensors.timestamp) as num from sensors inner join locations on sensors.locationid=locations.id group by sensors.locationid"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name string
-		var count int
-		err = rows.Scan(&name, &count)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		counts[name] = count
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(`
+		SELECT
+			sensors.locationid,
+			COUNT(sensors.timestamp) AS num
+		FROM sensors
+		GROUP BY
+			sensors.locationid`,
+			func(rows *sql.Rows) error {
+				for rows.Next() {
+					var name string
+					var count int
+					err = rows.Scan(&name, &count)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+					counts[name] = count
+				}
+				return rows.Err()
+			})
+	})
 	return
-}
-
-// GetAnalysisFromGreaterTime will return the analysis for a given timeframe
-// func (d *Database) GetAnalysisFromGreaterTime(timestamp interface{}) {
-// 	select sensors.timestamp, devices.name, location_predictions.prediction from sensors inner join location_predictions on location_predictions.timestamp=sensors.timestamp inner join devices on sensors.deviceid=devices.id WHERE sensors.timestamp > 0 GROUP BY devices.name ORDER BY sensors.timestamp DESC;
-// }
-
-// GetAllForClassification will return a sensor data for classifying
-func (d *Database) GetAllForClassification() (s []models.SensorData, err error) {
-	return d.GetAllFromQuery("SELECT * FROM sensors WHERE sensors.locationid !='' ORDER BY timestamp")
 }
 
 // GetAllForClassification will return a sensor data for classifying
-func (d *Database) GetAllNotForClassification() (s []models.SensorData, err error) {
-	return d.GetAllFromQuery("SELECT * FROM sensors WHERE sensors.locationid =='' ORDER BY timestamp")
+func (self *Database) GetAllForClassification(clbk func(s []models.SensorData, err error)) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		s, err := self.GetAllFromQuery("SELECT " + SENSOR_SQL + " FROM sensors WHERE sensors.locationid !='' ORDER BY timestamp")
+		clbk(s, err)
+	})
+}
+
+// GetAllForClassification will return a sensor data for classifying
+func (self *Database) GetAllNotForClassification(clbk func(s []models.SensorData, err error)) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		s, err := self.GetAllFromQuery("SELECT " + SENSOR_SQL + " FROM sensors WHERE sensors.locationid =='' ORDER BY timestamp")
+		clbk(s, err)
+	})
 }
 
 // GetLatest will return a sensor data for classifying
-func (d *Database) GetLatest(device string) (s models.SensorData, err error) {
-	deviceID, err := d.GetID("devices", device)
-	if err != nil {
-		return
-	}
-	var sensors []models.SensorData
-	sensors, err = d.GetAllFromPreparedQuery("SELECT * FROM sensors WHERE deviceID=? ORDER BY timestamp DESC LIMIT 1", deviceID)
-	if err != nil {
-		return
-	}
-	if len(sensors) > 0 {
-		s = sensors[0]
-	} else {
-		err = errors.New("no rows found")
-	}
+func (self *Database) GetLatest(device_id string) (s models.SensorData, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		var sensors []models.SensorData
+		sensors, err = db.GetAllFromPreparedQuery("SELECT "+SENSOR_SQL+" FROM sensors WHERE deviceid=? ORDER BY timestamp DESC LIMIT 1", device_id)
+		if err != nil {
+			return
+		}
+		if len(sensors) > 0 {
+			s = sensors[0]
+		} else {
+			err = errors.New("no rows found")
+		}
+	})
 	return
 }
 
-func (d *Database) GetKeys(keylike string) (keys []string, err error) {
-	query := "SELECT key FROM keystore WHERE key LIKE ?"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query(keylike)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	keys = []string{}
-	for rows.Next() {
-		var key string
-		err = rows.Scan(&key)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
+func (self *Database) GetKeys(keylike string) (keys []string, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		stmt, err := db.PrepareQuery(`SELECT key FROM keystore WHERE key LIKE ?`)
+		if nil != err {
 			return
 		}
-		keys = append(keys, key)
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+		defer stmt.Close()
+
+		rows, err := stmt.Query(keylike)
+		if err != nil {
+			err = errors.Wrap(err, "error running query")
+			return
+		}
+		defer rows.Close()
+
+		keys = []string{}
+		for rows.Next() {
+			var key string
+			err = rows.Scan(&key)
+			if err != nil {
+				err = errors.Wrap(err, "scanning")
+				return
+			}
+			keys = append(keys, key)
+		}
+		err = rows.Err()
+		if err != nil {
+			err = errors.Wrap(err, "rows")
+		}
+	})
 	return
 }
 
-func (d *Database) GetDevices() (devices []string, err error) {
-	query := "SELECT devicename FROM (SELECT devices.name as devicename,COUNT(devices.name) as counts FROM sensors INNER JOIN devices ON sensors.deviceid = devices.id GROUP by devices.name) ORDER BY counts DESC"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	devices = []string{}
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		devices = append(devices, name)
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, fmt.Sprintf("problem scanning rows, only got %d devices", len(devices)))
-	}
+func (self *Database) GetDevices() (devices []string, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(`
+		SELECT
+			devicename
+		FROM (
+			SELECT
+				deviceid AS devicename,
+				COUNT(deviceid) AS counts
+			FROM sensors
+			GROUP BY deviceid)
+			ORDER BY counts DESC`,
+			func(rows *sql.Rows) error {
+				devices = []string{}
+				for rows.Next() {
+					var name string
+					err = rows.Scan(&name)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+					devices = append(devices, name)
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
-func (d *Database) GetLocations() (locations []string, err error) {
-	query := "SELECT name FROM locations"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	locations = []string{}
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		locations = append(locations, name)
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
-	return
-}
-
-func (d *Database) GetIDToName(table string) (idToName map[string]string, err error) {
-	idToName = make(map[string]string)
-	query := "SELECT id,name FROM " + table
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name, id string
-		err = rows.Scan(&id, &name)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		idToName[id] = name
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
+func (self *Database) GetLocations() (locations []string, err error) {
+	self.runReadQuery(func(query_id string, db *Database) {
+		err = db.prepareAndRunQueryWithCallback(`SELECT name FROM locations`,
+			func(rows *sql.Rows) error {
+				locations = []string{}
+				for rows.Next() {
+					var name string
+					err = rows.Scan(&name)
+					if err != nil {
+						return errors.Wrap(err, "error while scanning row")
+					}
+					locations = append(locations, name)
+				}
+				return rows.Err()
+			})
+	})
 	return
 }
 
@@ -759,87 +653,19 @@ func GetFamilies() (families []string) {
 	return
 }
 
-func (d *Database) DeleteLocation(locationName string) (err error) {
-	id, err := d.GetID("locations", locationName)
-	if err != nil {
-		return
-	}
-	stmt, err := d.db.Prepare("DELETE FROM sensors WHERE locationid = ?")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
+func (self *Database) DeleteLocation(location_id string) (err error) {
+	self.runQueryAsync(func(query_id string) {
+		stmt, err := self.PrepareQuery("DELETE FROM sensors WHERE locationid = ?")
+		if nil != err {
+			Fatal(err, "DeleteLocation Prepare")
+		}
+		defer stmt.Close()
 
-	}
-	defer stmt.Close()
-	_, err = stmt.Exec(id)
-	return
-}
-
-// GetID will get the ID of an element in a table (devices/locations) and return an error if it doesn't exist
-func (d *Database) GetID(table string, name string) (id string, err error) {
-	// first check to see if it has already been added
-	stmt, err := d.db.Prepare("SELECT id FROM " + table + " WHERE name = ?")
-	defer stmt.Close()
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	err = stmt.QueryRow(name).Scan(&id)
-	return
-}
-
-// AddName will add a name to a table (devices/locations) and return the ID. If the device already exists it will just return it.
-func (d *Database) AddName(table string, name string) (deviceID string, err error) {
-	// first check to see if it has already been added
-	deviceID, err = d.GetID(table, name)
-	if err == nil {
-		return
-	}
-	// logger.Log.Debugf("creating new name for %s in %s", name, table)
-
-	// get the current count
-	stmt, err := d.db.Prepare("SELECT COUNT(id) FROM " + table)
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		stmt.Close()
-		return
-	}
-	var currentCount int
-	err = stmt.QueryRow().Scan(&currentCount)
-	stmt.Close()
-	if err != nil {
-		err = errors.Wrap(err, "problem getting device count")
-		return
-	}
-
-	// transform the device name into an ID with the current count
-	currentCount++
-	deviceID = stringsizer.Transform(currentCount)
-	// logger.Log.Debugf("transformed (%d) %s -> %s", currentCount, name, deviceID)
-
-	// add the device name and ID
-	tx, err := d.db.Begin()
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
-	query := "insert into " + table + "(id,name) values (?, ?)"
-	// logger.Log.Debugf("running query: '%s'", query)
-	stmt, err = tx.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
-	defer stmt.Close()
-	_, err = stmt.Exec(deviceID, name)
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-	}
-	err = tx.Commit()
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
+		_, err = stmt.Exec(location_id)
+		if nil != err {
+			Fatal(err, "DeleteLocation Execute")
+		}
+	})
 	return
 }
 
@@ -852,9 +678,9 @@ func Exists(name string) (err error) {
 	return
 }
 
-func (d *Database) Delete() (err error) {
-	logger.Log.Debugf("deleting %s", d.family)
-	return os.Remove(d.name)
+func (self *Database) Delete() (err error) {
+	// logger.Log.Debugf("deleting %s", self.family)
+	return os.Remove(self.name)
 }
 
 // Open will open the database for transactions by first aquiring a filelock.
@@ -876,22 +702,6 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 		return
 	}
 
-	// obtain a lock on the database
-	// logger.Log.Debugf("getting filelock on %s", d.name+".lock")
-	for {
-		var ok bool
-		databaseLock.Lock()
-		if _, ok = databaseLock.Locked[d.name]; !ok {
-			databaseLock.Locked[d.name] = true
-		}
-		databaseLock.Unlock()
-		if !ok {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	// logger.Log.Debugf("got filelock")
-
 	// // check if it is a new database
 	newDatabase := false
 	if _, err := os.Stat(d.name); os.IsNotExist(err) {
@@ -899,11 +709,10 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 	}
 
 	// open sqlite3 database
-	d.db, err = sql.Open("sqlite3", d.name)
+	d.db, err = sql.Open("sqlite3", d.name+"?cache=shared&mode=rwc&_busy_timeout=50000000")
 	if err != nil {
 		return
 	}
-	// logger.Log.Debug("opened sqlite3 database")
 
 	// create new database tables if needed
 	if newDatabase {
@@ -913,11 +722,12 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 		}
 		logger.Log.Debug("made tables")
 	}
+	d.StartRequestQueue()
 
 	return
 }
 
-func (d *Database) Debug(debugMode bool) {
+func (self *Database) Debug(debugMode bool) {
 	if debugMode {
 		logger.SetLevel("debug")
 	} else {
@@ -926,30 +736,24 @@ func (d *Database) Debug(debugMode bool) {
 }
 
 // Close will close the database connection and remove the filelock.
-func (d *Database) Close() (err error) {
-	if d.isClosed {
+func (self *Database) Close() (err error) {
+	if self.isClosed {
 		return
 	}
 	// close database
-	err2 := d.db.Close()
+	err2 := self.db.Close()
 	if err2 != nil {
 		err = err2
 		logger.Log.Error(err)
 	}
-
-	// close filelock
-	// logger.Log.Debug("closing lock")
-	databaseLock.Lock()
-	delete(databaseLock.Locked, d.name)
-	databaseLock.Unlock()
-	d.isClosed = true
+	self.isClosed = true
 	return
 }
 
-func (d *Database) GetAllFromQuery(query string) (s []models.SensorData, err error) {
+func (self *Database) GetAllFromQuery(query string) (s []models.SensorData, err error) {
 	logger.Log.Debug(query)
 
-	rows, err := d.db.Query(query)
+	rows, err := self.db.Query(query)
 	if err != nil {
 		err = errors.Wrap(err, "GetAllFromQuery")
 		return
@@ -957,22 +761,18 @@ func (d *Database) GetAllFromQuery(query string) (s []models.SensorData, err err
 	defer rows.Close()
 
 	// parse rows
-	s, err = d.getRows(rows)
+	s, err = self.getRows(rows)
 	if err != nil {
 		err = errors.Wrap(err, query)
 	}
+
 	return
 }
 
 // GetAllFromPreparedQuery
-func (d *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s []models.SensorData, err error) {
-	logger.Log.Debug(query)
-
-	// prepare statement
-	// startQuery := time.Now()
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
+func (self *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s []models.SensorData, err error) {
+	stmt, err := self.PrepareQuery(query)
+	if nil != err {
 		return
 	}
 	defer stmt.Close()
@@ -981,114 +781,126 @@ func (d *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s
 		err = errors.Wrap(err, query)
 		return
 	}
-	// logger.Log.Debugf("%s: %s", query, time.Since(startQuery))
-	// startQuery = time.Now()
 	defer rows.Close()
-	s, err = d.getRows(rows)
+	s, err = self.getRows(rows)
 	if err != nil {
 		err = errors.Wrap(err, query)
 	}
-	// logger.Log.Debugf("getRows %s: %s", query, time.Since(startQuery))
 	return
 }
 
-func (d *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
-	// first get the columns
-	columnList, err := d.Columns()
-	if err != nil {
-		return
-	}
-
-	// get the string sizer for the sensor data
-	var sensorDataStringSizerString string
-	err = d.Get("sensorDataStringSizer", &sensorDataStringSizerString)
-	if err != nil {
-		return
-	}
-	sensorDataSS, err := stringsizer.New(sensorDataStringSizerString)
-	if err != nil {
-		return
-	}
-
-	deviceIDToName, err := d.GetIDToName("devices")
-	if err != nil {
-		return
-	}
-
-	locationIDToName, err := d.GetIDToName("locations")
-	if err != nil {
-		return
-	}
+func (self *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
 
 	s = []models.SensorData{}
 	// loop through rows
 	for rows.Next() {
-		var arr []interface{}
-		for i := 0; i < len(columnList); i++ {
-			arr = append(arr, new(interface{}))
-		}
-		err = rows.Scan(arr...)
+		var row string
+		var sensor models.SensorRow
+		err = rows.Scan(&row)
 		if err != nil {
+			panic(err)
 			err = errors.Wrap(err, "getRows")
 			return
 		}
+
+		err = json.Unmarshal([]byte(row), &sensor)
+		if err != nil {
+			fmt.Println(row)
+			panic(err)
+			err = errors.Wrap(err, "getRows")
+			return
+		}
+
 		s0 := models.SensorData{
 			// the underlying value of the interface pointer and cast it to a pointer interface to cast to a byte to cast to a string
-			Timestamp: int64((*arr[0].(*interface{})).(int64)),
-			Family:    d.family,
-			Device:    deviceIDToName[string((*arr[1].(*interface{})).([]uint8))],
-			Location:  locationIDToName[string((*arr[2].(*interface{})).([]uint8))],
+			Timestamp: sensor.Timestamp,
+			Family:    self.family,
+			Device:    sensor.DeviceId,
+			Location:  sensor.LocationId,
 			Sensors:   make(map[string]map[string]interface{}),
 		}
-		// add in the sensor data
-		for i, colName := range columnList {
-			if i < 3 {
-				continue
-			}
-			if *arr[i].(*interface{}) == nil {
-				continue
-			}
-			shortenedJSON := string((*arr[i].(*interface{})).([]uint8))
-			s0.Sensors[colName], err = sensorDataSS.ExpandMapFromString(shortenedJSON)
-			if err != nil {
-				return
-			}
-		}
+
+		s0.Sensors[sensor.SensorType] = sensor.Sensor
+
 		s = append(s, s0)
 	}
 	err = rows.Err()
 	if err != nil {
+		panic(err)
 		err = errors.Wrap(err, "getRows")
 	}
 	return
 }
 
 // SetGPS will set a GPS value in the GPS database
-func (d *Database) SetGPS(p models.SensorData) (err error) {
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "SetGPS")
-	}
-	stmt, err := tx.Prepare("insert or replace into gps(timestamp ,mac, loc, lat, lon, alt) values (?, ?, ?, ?, ?,?)")
-	if err != nil {
-		return errors.Wrap(err, "SetGPS")
-	}
-	defer stmt.Close()
+func (self *Database) SetGPS(p models.SensorData) (err error) {
+	self.runQueryAsync(func(query_id string) {
+		tx, err := self.db.Begin()
+		if err != nil {
+			Fatal(err, "SetGPS Begin")
+		}
+		stmt, err := tx.Prepare("INSERT OR REPLACE INTO gps(mac, loc, lat, lon, alt) VALUES (?, ?, ?, ?, ?)")
+		if err != nil {
+			Fatal(err, "SetGPS Prepare")
+		}
+		defer stmt.Close()
 
-	for sensorType := range p.Sensors {
-		for mac := range p.Sensors[sensorType] {
-			_, err = stmt.Exec(p.Timestamp, sensorType+"-"+mac, p.Location, p.GPS.Latitude, p.GPS.Longitude, p.GPS.Altitude)
-			if err != nil {
-				return errors.Wrap(err, "SetGPS")
+		for sensorType := range p.Sensors {
+			for mac := range p.Sensors[sensorType] {
+				_, err = stmt.Exec(sensorType+"-"+mac, p.Location, p.GPS.Latitude, p.GPS.Longitude, p.GPS.Altitude)
+				if err != nil {
+					Fatal(err, "SetGPS Execute")
+				}
 			}
 		}
-	}
 
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "SetGPS")
-	}
+		err = tx.Commit()
+		if err != nil {
+			Fatal(err, "SetGPS Commit")
+		}
+	})
 	return
+}
+
+func (self *Database) StartRequestQueue() {
+	self.requestQueue = make(chan func(query_id string), 100)
+	var c int64 = 0
+	go func() {
+		for request_func := range self.requestQueue {
+			c++
+
+			t1 := time.Now()
+			query_id := self.getQId("w")
+			logger.Log.Infof("Running query %v", query_id)
+			request_func(query_id)
+			logger.Log.Debugf("Finished query %v %v", query_id, time.Since(t1))
+		}
+	}()
+}
+
+// Generate query id for debugging
+func (self *Database) getQId(mode string) string {
+	self.lock.Lock()
+	self.num_queries++
+	query_id := fmt.Sprintf("%v%v%6v", mode, GetMD5Hash(self.family)[0:4], strconv.FormatInt(self.num_queries, 16))
+	query_id = strings.Replace(query_id, " ", "x", -1)
+	self.lock.Unlock()
+	return query_id
+}
+
+func (self *Database) GetPending() int {
+	return len(self.requestQueue)
+}
+
+func Fatal(err error, wrapper string) {
+	err = errors.Wrap(err, wrapper)
+	panic(err)
+}
+
+func GetMD5Hash(text string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(text))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // // GetGPS will return a GPS for a given mac, if it exists

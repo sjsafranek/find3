@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+type SensorRow struct {
+	Timestamp  int64                  `json:"timestamp"`
+	DeviceId   string                 `json:"deviceid"`
+	LocationId string                 `json:"locationid"`
+	SensorType string                 `json:"sensor_type"`
+	Sensor     map[string]interface{} `json:"sensor"`
+}
+
 // SensorData is the typical data structure for storing sensor data.
 type SensorData struct {
 	// Timestamp is the unique identifier, the time in milliseconds

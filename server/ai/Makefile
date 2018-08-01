@@ -4,7 +4,8 @@ serve: clean
 	export FLASK_APP=server.py && \
 	export FLASK_DEBUG=1 && \
 	cd src && \
-	flask run --debugger --port 8002
+	python3 server.py
+	# flask run --debugger --port 8002
 
 production: clean
 	export LC_ALL=C.UTF-8 && \

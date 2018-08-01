@@ -1,51 +1,30 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
-	"net/http"
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/pkg/errors"
-	cache "github.com/robfig/go-cache"
-	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/learning/nb1"
-	"github.com/schollz/find3/server/main/src/models"
-	"github.com/schollz/find3/server/main/src/utils"
+	// cache "github.com/robfig/go-cache"
+	"github.com/schollz/find4/server/main/src/database"
+	"github.com/schollz/find4/server/main/src/learning/nb1"
+	"github.com/schollz/find4/server/main/src/models"
+	"github.com/schollz/find4/server/main/src/utils"
 )
 
 // AIPort designates the port for the AI processing
 var AIPort = "8002"
 var DataFolder = "."
 
-var (
-	httpClient *http.Client
-	routeCache *cache.Cache
-)
-
-const (
-	MaxIdleConnections int = 20
-	RequestTimeout     int = 300
-)
-
-// init HTTPClient
-func init() {
-	httpClient = createHTTPClient()
-	routeCache = cache.New(5*time.Minute, 10*time.Minute)
-}
-
-// createHTTPClient for connection re-use
-func createHTTPClient() *http.Client {
-	client := &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: MaxIdleConnections,
-		},
-		Timeout: time.Duration(RequestTimeout) * time.Second,
-	}
-
-	return client
-}
+// var (
+// 	routeCache *cache.Cache
+// )
+//
+// func init() {
+// 	routeCache = cache.New(5*time.Minute, 10*time.Minute)
+// }
 
 type AnalysisResponse struct {
 	Data    models.LocationAnalysis `json:"analysis"`
@@ -53,7 +32,7 @@ type AnalysisResponse struct {
 	Success bool                    `json:"success"`
 }
 
-func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err error) {
+func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata models.LocationAnalysis, err error) {
 	startAnalyze := time.Now()
 
 	aidata.Guesses = []models.LocationPrediction{}
@@ -75,24 +54,20 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 		var p2 ClassifyPayload
 		p2.Sensor = s
 		p2.DataFolder = DataFolder
-		url := "http://localhost:" + AIPort + "/classify"
 		bPayload, err := json.Marshal(p2)
 		if err != nil {
 			err = errors.Wrap(err, "problem marshaling data")
 			aChan <- a{err: err}
 			return
 		}
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(bPayload))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			err = errors.Wrap(err, "problem posting payload")
-			aChan <- a{err: err}
+
+		body, err := aiSendAndRecieve(fmt.Sprintf(`{"method": "classify", "data":%v}`, string(bPayload)))
+		if nil != err {
+			err = errors.Wrap(err, "problem sending message to ai server")
 			return
 		}
-		defer resp.Body.Close()
 
-		err = json.NewDecoder(resp.Body).Decode(&target)
+		err = json.Unmarshal([]byte(body), &target)
 		if err != nil {
 			err = errors.Wrap(err, "problem decoding response")
 			aChan <- a{err: err}
@@ -121,7 +96,7 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 		// do naive bayes1 learning
 		nb1Time := time.Now()
 		nb := nb1.New()
-		pl, err := nb.Classify(s)
+		pl, err := nb.Classify(db, s)
 		logger.Log.Debugf("[%s] nb1 classified %s", s.Family, time.Since(nb1Time))
 		bChan <- b{pl: pl, err: err}
 	}(bChan)
@@ -185,13 +160,8 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// 	logger.Log.Warnf("[%s] nb2 classify: %s", s.Family, cResult.err.Error())
 	// }
 
-	d, err := database.Open(s.Family)
-	if err != nil {
-		return
-	}
 	var algorithmEfficacy map[string]map[string]models.BinaryStats
-	d.Get("AlgorithmEfficacy", &algorithmEfficacy)
-	d.Close()
+	db.Get("AlgorithmEfficacy", &algorithmEfficacy)
 	aidata.Guesses = determineBestGuess(aidata, algorithmEfficacy)
 
 	if aidata.IsUnknown {
@@ -206,12 +176,7 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// add prediction to the database
 	// adding predictions uses up a lot of space
 	go func() {
-		d, err := database.Open(s.Family)
-		if err != nil {
-			return
-		}
-		defer d.Close()
-		errInsert := d.AddPrediction(s.Timestamp, aidata.Guesses)
+		errInsert := db.AddPrediction(s.Timestamp, aidata.Guesses)
 		if errInsert != nil {
 			logger.Log.Errorf("[%s] problem inserting: %s", s.Family, errInsert.Error())
 		}
@@ -283,30 +248,26 @@ func (p PairList) Len() int           { return len(p) }
 func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
 func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-func GetByLocation(family string, minutesAgoInt int, showRandomized bool, activeMinsThreshold int, minScanners int, minProbability float64, deviceCounts map[string]int) (byLocations []models.ByLocation, err error) {
+func GetByLocation(db *database.Database, family string, minutesAgoInt int, showRandomized bool, activeMinsThreshold int, minScanners int, minProbability float64, deviceCounts map[string]int) (byLocations []models.ByLocation, err error) {
 	// TODO
 	// MAKE INTO SINGLE CALL
 
 	millisecondsAgo := int64(minutesAgoInt * 60 * 1000)
 
-	d, err := database.Open(family, true)
-	if err != nil {
-		return
-	}
-	defer d.Close()
-
 	startTime := time.Now()
-	sensors, err := d.GetSensorFromGreaterTime(millisecondsAgo)
+	sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
 	logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
 
 	startTime = time.Now()
 	preAnalyzed := make(map[int64][]models.LocationPrediction)
 	devicesToCheckMap := make(map[string]struct{})
 	for _, sensor := range sensors {
-		a, errGet := d.GetPrediction(sensor.Timestamp)
+		a, errGet := db.GetPrediction(sensor.Timestamp)
 		if errGet != nil {
+			logger.Log.Error(errGet)
 			continue
 		}
+		logger.Log.Infof("%v %v", sensor.Timestamp, a)
 		preAnalyzed[sensor.Timestamp] = a
 		devicesToCheckMap[sensor.Device] = struct{}{}
 	}
@@ -323,7 +284,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 
 	startTime = time.Now()
 	if len(deviceCounts) == 0 {
-		deviceCounts, err = d.GetDeviceCountsFromDevices(devicesToCheck)
+		deviceCounts, err = db.GetDeviceCountsFromDevices(devicesToCheck)
 		if err != nil {
 			err = errors.Wrap(err, "could not get devices")
 			return
@@ -332,7 +293,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 	logger.Log.Debugf("[%s] got device counts %s", family, time.Since(startTime))
 
 	startTime = time.Now()
-	deviceFirstTime, err := d.GetDeviceFirstTimeFromDevices(devicesToCheck)
+	deviceFirstTime, err := db.GetDeviceFirstTimeFromDevices(devicesToCheck)
 	if err != nil {
 		err = errors.Wrap(err, "problem getting device first time")
 		return
@@ -340,9 +301,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 	logger.Log.Debugf("[%s] got device first-time %s", family, time.Since(startTime))
 
 	var rollingData models.ReverseRollingData
-	errGotRollingData := d.Get("ReverseRollingData", &rollingData)
-
-	d.Close()
+	errGotRollingData := db.Get("ReverseRollingData", &rollingData)
 
 	locations := make(map[string][]models.ByLocationDevice)
 	for _, s := range sensors {
@@ -366,10 +325,12 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 
 		var a []models.LocationPrediction
 		if _, ok := preAnalyzed[s.Timestamp]; ok {
+			logger.Log.Info("preAnalyzed")
 			a = preAnalyzed[s.Timestamp]
 		} else {
+			logger.Log.Info("AnalyzeSensorData")
 			var aidata models.LocationAnalysis
-			aidata, err = AnalyzeSensorData(s)
+			aidata, err = AnalyzeSensorData(db, s)
 			if err != nil {
 				return
 			}
@@ -377,6 +338,8 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 		}
 
 		// filter on probability
+		logger.Log.Infof("%v", s)
+		logger.Log.Infof("%v", a)
 		if a[0].Probability < minProbability {
 			continue
 		}
