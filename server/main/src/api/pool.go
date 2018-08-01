@@ -61,12 +61,17 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 		return aiSendAndRecieveWithRetry(query, attempt)
 	}
 
+	// TODO
+	//  - sockets get backed up and python end starts disconnecting connections
+	//  - retry doesn't seem to address this
+	//  - find out why sockets stop responding...
 	// if pc, ok := conn.(*pool.PoolConn); !ok {
 	// 	logger.Log.Warn("socket is unusable, removing from pool")
 	// 	pc.MarkUnusable()
 	// 	pc.Close()
 	// }
-
+	// HACK
+	//  - close sockets every transaction...
 	logger.Log.Warn("socket is unusable, removing from pool [TEST]")
 	pc := conn.(*pool.PoolConn)
 	pc.MarkUnusable()
