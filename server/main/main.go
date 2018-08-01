@@ -2,14 +2,15 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path"
 	"runtime"
 	"runtime/pprof"
+	"syscall"
 	"time"
-
-	"fmt"
 
 	"github.com/schollz/find4/server/main/src/api"
 	"github.com/schollz/find4/server/main/src/database"
@@ -18,6 +19,21 @@ import (
 )
 
 func main() {
+
+	signal_queue := make(chan os.Signal)
+	signal.Notify(signal_queue, syscall.SIGTERM)
+	signal.Notify(signal_queue, syscall.SIGINT)
+	go func() {
+		sig := <-signal_queue
+		log.Printf("caught sig: %+v\n", sig)
+		log.Println("Gracefully shutting down...")
+		api.Shutdown()
+		server.Shutdown()
+		log.Println("Shutting down...")
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(0)
+	}()
+
 	aiPort := flag.String("ai", "8002", "port for the AI server")
 	port := flag.String("port", "8003", "port for the data (this) server")
 	debug := flag.Bool("debug", false, "turn on debug mode")

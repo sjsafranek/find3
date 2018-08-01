@@ -13,7 +13,7 @@ import (
 
 var (
 	AI_SERVER_ADDRESS string = "localhost:7005"
-	aiPool            pool.Pool
+	AI_POOL           pool.Pool
 	AI_PENDING        int = 0
 	ai_counter_lock   sync.RWMutex
 )
@@ -24,7 +24,7 @@ func init() {
 	if nil != err {
 		panic(err)
 	}
-	aiPool = pool
+	AI_POOL = pool
 }
 
 const RETRY_LIMIT int = 2
@@ -38,7 +38,7 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 		return "", err
 	}
 
-	conn, err := aiPool.Get()
+	conn, err := AI_POOL.Get()
 	if nil != err {
 		panic(err)
 	}
@@ -61,11 +61,16 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 		return aiSendAndRecieveWithRetry(query, attempt)
 	}
 
-	if pc, ok := conn.(*pool.PoolConn); !ok {
-		logger.Log.Warn("socket is unusable, removing from pool")
-		pc.MarkUnusable()
-		pc.Close()
-	}
+	// if pc, ok := conn.(*pool.PoolConn); !ok {
+	// 	logger.Log.Warn("socket is unusable, removing from pool")
+	// 	pc.MarkUnusable()
+	// 	pc.Close()
+	// }
+
+	logger.Log.Warn("socket is unusable, removing from pool [TEST]")
+	pc := conn.(*pool.PoolConn)
+	pc.MarkUnusable()
+	pc.Close()
 
 	return results, nil
 }
@@ -101,22 +106,9 @@ func init() {
 		}
 	}()
 
-	// TODO
-	//  - gracefully shutdown pool
+}
 
-	// signal_queue := make(chan os.Signal)
-	// signal.Notify(signal_queue, syscall.SIGTERM)
-	// signal.Notify(signal_queue, syscall.SIGINT)
-	// go func() {
-	// 	sig := <-signal_queue
-	// 	logger.Log.Warnf("caught sig: %+v", sig)
-	// 	logger.Log.Warn("Gracefully shutting down...")
-	// 	for family := range DATABASES {
-	// 		logger.Log.Warnf("Closing %v database", family)
-	// 		DATABASES[family].Close()
-	// 	}
-	// 	logger.Log.Warn("Shutting down...")
-	// 	os.Exit(0)
-	// }()
-
+func Shutdown() {
+	logger.Log.Warn("Closing connection pool...")
+	AI_POOL.Close()
 }

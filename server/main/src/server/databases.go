@@ -1,9 +1,6 @@
 package server
 
 import (
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	// "github.com/schollz/find4/server/main/src/api"
@@ -65,19 +62,11 @@ func init() {
 		}
 	}()
 
-	signal_queue := make(chan os.Signal)
-	signal.Notify(signal_queue, syscall.SIGTERM)
-	signal.Notify(signal_queue, syscall.SIGINT)
-	go func() {
-		sig := <-signal_queue
-		logger.Log.Warnf("caught sig: %+v", sig)
-		logger.Log.Warn("Gracefully shutting down...")
-		for family := range DATABASES {
-			logger.Log.Warnf("Closing %v database", family)
-			DATABASES[family].Close()
-		}
-		logger.Log.Warn("Shutting down...")
-		os.Exit(0)
-	}()
+}
 
+func Shutdown() {
+	for family := range DATABASES {
+		logger.Log.Warnf("Closing %v database", family)
+		DATABASES[family].Close()
+	}
 }
