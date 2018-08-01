@@ -1,7 +1,6 @@
 package server
 
 import (
-	// "errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -52,7 +51,7 @@ func init() {
 
 	go func() {
 		for {
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 
 			c := 0
 			for range DATABASES {

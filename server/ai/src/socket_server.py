@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import signal
@@ -30,13 +31,19 @@ class TcpServer(threading.Thread):
             self._acceptClients()
         except Exception as e:
             logger.error(e)
-            exit()
+            # fatal error occured
+            # bail main process
+            os._exit(1)
 
     def _acceptClients(self):
+        CONNECTIONS = 0
         logger.debug('waiting for connections')
         while not self.event.is_set() :
             conn, addr = self.socket.accept()
             logger.debug('Connected address: {0}'.format(addr))
+            CONNECTIONS += 1
+
+            logger.debug("{0} socket connections".format(CONNECTIONS))
 
             try:
                 payload = ''
@@ -80,6 +87,7 @@ class TcpServer(threading.Thread):
                 logger.error(e)
 
             conn.close()
+            CONNECTIONS -= 1
 
     def shutdown(self):
         self.event.set()
