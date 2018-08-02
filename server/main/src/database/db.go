@@ -25,6 +25,7 @@ import (
 	"github.com/schollz/sqlite3dump"
 	// "github.com/schollz/stringsizer"
 	// "github.com/satori/go.uuid"
+	// "github.com/schollz/find4/server/main/src/api"
 )
 
 // MakeTables creates two tables, a `keystore` table:
@@ -39,7 +40,7 @@ import (
 // of sensor data are inserted. The LOCATION column is optional and
 // only used for learning/classification.
 func (self *Database) MakeTables() (err error) {
-	logger.Log.Debug("create database tables for %v", self.family)
+	logger.Log.Debugf("create database tables for %v", self.family)
 	_, err = self.db.Exec(TABLES_SQL)
 	if err != nil {
 		logger.Log.Error(err)
@@ -874,6 +875,8 @@ func (self *Database) StartRequestQueue() {
 			logger.Log.Tracef("Running query %v", query_id)
 			request_func(query_id)
 			logger.Log.Tracef("Finished query %v %v", query_id, time.Since(t1))
+
+			self.LastInsertTime = time.Now()
 		}
 	}()
 }

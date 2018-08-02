@@ -380,146 +380,150 @@
 <script src="/static/js/jquery.autocomplete.js"></script>
 <script type="text/javascript">
 
-var Api = function(family){
-    this.family = family;
-    this.debug = true;
-}
-
-Api.prototype.calibrate = function(callback) {
-    this.debug && console.log("api/v1/calibrate/" + this.family);
-    $.get("/api/v1/calibrate/" + this.family, function(data) {
-        callback(null, data)
-    }).fail(function(err) {
-        callback(err);
-    })
-}
-
-Api.prototype.settingsPassive = function(device, location, callback) {
-    var payload = JSON.stringify({
-        family: this.device,
-        device: device,
-        location: location
-    });
-    this.debug && console.log("/api/v1/settings/passive", payload);
-    $.post("/api/v1/settings/passive", payload)
-        .done(function(data) {
-            callback(null, data)
-        })
-        .fail(function(err){
-            return callback(err);
-        })
-}
-
-var api = new Api("{{.Family}}");
-var socket;
-
-(function($) {
-
-    toastr.options = {
-        "closeButton": false,
-        "debug": false,
-        "newestOnTop": false,
-        "progressBar": false,
-        "positionClass": "toast-top-right",
-        "preventDuplicates": false,
-        "onclick": null,
-        "showDuration": "300",
-        "hideDuration": "1000",
-        "timeOut": "5000",
-        "extendedTimeOut": "1000",
-        "showEasing": "swing",
-        "hideEasing": "linear",
-        "showMethod": "fadeIn",
-        "hideMethod": "fadeOut"
+    var Api = function(family){
+        this.family = family;
+        this.debug = true;
     }
 
-    $('#bootstrap-data-table-export').DataTable();
-    $('#passive-table').DataTable();
-    $("#locationInput").autocomplete({
-        lookup: {{.LocationList }},
-    });
+    Api.prototype.calibrate = function(callback) {
+        this.debug && console.log("api/v1/calibrate/" + this.family);
+        $.get("/api/v1/calibrate/" + this.family, function(data) {
+            callback(null, data)
+        }).fail(function(err) {
+            callback(err);
+        })
+    }
 
-    $("#deviceInput").autocomplete({
-        lookup: {{.DeviceList }},
-    });
-    $("#recalibration").click(function() {
-        $("#recalibrating").fadeIn("slow");
-        api.calibrate(function(err,res){
-            if (err) throw new Error(err);
-            console.log(res);
-            $("#recalibrating").fadeOut("slow");
-            // window.location.reload(1);
+    Api.prototype.settingsPassive = function(device, location, callback) {
+        var payload = JSON.stringify({
+            family: this.device,
+            device: device,
+            location: location
         });
-    });
-    $(".stopScan").click(function(event) {
-        api.settingsPassive(event.target.id, null, function(err, res){
-            if (err) throw new Error(err);
-            $("#passiveBanner").fadeIn();
-            $("#passiveMessage").text("Stopped learning on " + event.target.id);
-            console.log(data);
-        });
-    });
-    $("#startLearning2").click(function(e) {
-        e.preventDefault();
-        var device = $("#deviceInput").val();
-        var loc = $("#locationInput").val();
-        if (loc == "" || device == "") {
-            $("#passiveBannerBad").show();
-            $("#passiveMessageBad").text("Must learn with location and device.");
-        }
-        api.settingsPassive(device, loc, function(err, res){
-            if (err) throw new Error(err);
-            $("#passiveBanner").fadeIn();
-            $("#passiveMessage").text("Learning on " + device);
-            console.log(data);
-        });
-    });
+        this.debug && console.log("/api/v1/settings/passive", payload);
+        $.post("/api/v1/settings/passive", payload)
+            .done(function(data) {
+                callback(null, data)
+            })
+            .fail(function(err){
+                return callback(err);
+            })
+    }
+
+    var api = new Api("{{.Family}}");
 
 
 
-    const socketMessageListener = (event) => {
-        console.log(event);
-        data = JSON.parse(event.data);
-        console.log(data);
-        idName = sha256.sha256(data.sensors.d);
-        console.log(idName);
-        var lastLocation = $("#location-" + idName).text();
-        $("#location-" + idName).text(data.guesses[0].location);
-        $("#probability-" + idName).text(Math.round(100 * data.guesses[0].probability) +
-            "%");
-
-
-        var date = new Date(0);
-        date.setUTCMilliseconds(data.sensors.t);
-        console.log(date);
-        $("#lastseen-" + idName).text(date.toUTCString().replace(" GMT", ""));
-        var entered = " entered ";
-        if (lastLocation == data.guesses[0].location) {
-            entered = " still at "
-        }
-        toastr["success"](data.sensors.d + entered + data.guesses[0].location + " (" + Math.round(100 * data.guesses[0].probability) +
-            "%)");
+    var Socket = function(family){
+        this.family = family;
+        this.debug = true;
+        this.ws;
+        this.connect();
     };
 
-    const socketOpenListener = (event) => {
-        console.log('Connected');
-        socket.send('hello');
-    };
-
-    const socketCloseListener = (event) => {
-        if (socket) {
-            console.error('Disconnected.');
+    Socket.prototype.connect = function(){
+        var self = this;
+        if (!this.ws) {
+            var url = window.origin.replace("http", "ws") + '/ws?device=all&family=' + this.family;
+            var ws = new WebSocket(url);
+            ws.onmessage = function(event) {
+                console.log(event);
+                data = JSON.parse(event.data);
+                console.log(data);
+                idName = sha256.sha256(data.sensors.d);
+                console.log(idName);
+                var lastLocation = $("#location-" + idName).text();
+                $("#location-" + idName).text(data.guesses[0].location);
+                $("#probability-" + idName).text(Math.round(100 * data.guesses[0].probability) + "%");
+                var date = new Date(0);
+                date.setUTCMilliseconds(data.sensors.t);
+                console.log(date);
+                $("#lastseen-" + idName).text(date.toUTCString().replace(" GMT", ""));
+                var entered = " entered ";
+                if (lastLocation == data.guesses[0].location) {
+                    entered = " still at ";
+                }
+                toastr["success"](data.sensors.d + entered + data.guesses[0].location + " (" + Math.round(100 * data.guesses[0].probability) + "%)");
+            }
+            ws.onopen = function(event) {
+                self.debug && console.log('Connected', event);
+                this.send('hello');
+            }
+            ws.onclose = function(event) {
+                self.debug && console.log('Disconnected', event);
+                self.ws = null;
+                self.connect();
+            }
+            this.ws = ws;
         }
-        var url = window.origin.replace("http", "ws") + '/ws?device=all&family={{.FamilyJS}}';
-        socket = new WebSocket(url);
-        socket.addEventListener('open', socketOpenListener);
-        socket.addEventListener('message', socketMessageListener);
-        socket.addEventListener('close', socketCloseListener);
-    };
+    }
 
-    socketCloseListener();
+    var socket = new Socket("{{.FamilyJS}}");
 
 
-})(jQuery);
+
+    (function($) {
+
+        toastr.options = {
+            "closeButton": false,
+            "debug": false,
+            "newestOnTop": false,
+            "progressBar": false,
+            "positionClass": "toast-top-right",
+            "preventDuplicates": false,
+            "onclick": null,
+            "showDuration": "300",
+            "hideDuration": "1000",
+            "timeOut": "5000",
+            "extendedTimeOut": "1000",
+            "showEasing": "swing",
+            "hideEasing": "linear",
+            "showMethod": "fadeIn",
+            "hideMethod": "fadeOut"
+        }
+
+        $('#bootstrap-data-table-export').DataTable();
+        $('#passive-table').DataTable();
+        $("#locationInput").autocomplete({
+            lookup: {{.LocationList }},
+        });
+
+        $("#deviceInput").autocomplete({
+            lookup: {{.DeviceList }},
+        });
+        $("#recalibration").click(function() {
+            $("#recalibrating").fadeIn("slow");
+            api.calibrate(function(err,res){
+                if (err) throw new Error(err);
+                console.log(res);
+                $("#recalibrating").fadeOut("slow");
+                // window.location.reload(1);
+            });
+        });
+        $(".stopScan").click(function(event) {
+            api.settingsPassive(event.target.id, null, function(err, res){
+                if (err) throw new Error(err);
+                $("#passiveBanner").fadeIn();
+                $("#passiveMessage").text("Stopped learning on " + event.target.id);
+                console.log(data);
+            });
+        });
+        $("#startLearning2").click(function(e) {
+            e.preventDefault();
+            var device = $("#deviceInput").val();
+            var loc = $("#locationInput").val();
+            if (loc == "" || device == "") {
+                $("#passiveBannerBad").show();
+                $("#passiveMessageBad").text("Must learn with location and device.");
+            }
+            api.settingsPassive(device, loc, function(err, res){
+                if (err) throw new Error(err);
+                $("#passiveBanner").fadeIn();
+                $("#passiveMessage").text("Learning on " + device);
+                console.log(data);
+            });
+        });
+
+    })(jQuery);
 </script>
 {{ template "footer" . }}

@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"sync"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sjsafranek/ligneous"
@@ -16,12 +17,13 @@ var DataFolder = DEFAULT_DATA_FOLDER
 // Database is the main structure for holding the information
 // pertaining to the name of the database.
 type Database struct {
-	name         string
-	family       string
-	db           *sql.DB
-	logger       *ligneous.SeelogWrapper
-	isClosed     bool
-	requestQueue chan func(string)
-	num_queries  int64
-	lock         sync.RWMutex
+	name           string
+	family         string
+	db             *sql.DB
+	logger         *ligneous.SeelogWrapper
+	isClosed       bool
+	requestQueue   chan func(string)
+	num_queries    int64
+	lock           sync.RWMutex
+	LastInsertTime time.Time
 }

@@ -64,10 +64,12 @@ func calibrationWorker(db *database.Database, family string) {
 	last_classification_time := time.Now()
 	for {
 		// check if event has been triggered
+		// if last_classification_time != db.LastInsertTime {
+		// last_classification_time = db.LastInsertTime
 		if last_classification_time != globalUpdateCounter.Queues[family] {
 			last_classification_time = globalUpdateCounter.Queues[family]
 
-			logger.Log.Debug("Calibrating %v...", family)
+			logger.Log.Debugf("Calibrating %v...", family)
 
 			// if any errors occur they get swallowed
 			err := Calibrate(db, family, true)
