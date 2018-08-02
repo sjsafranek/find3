@@ -3,7 +3,7 @@ package server
 import (
 	"time"
 
-	// "github.com/schollz/find4/server/main/src/api"
+	"github.com/schollz/find4/server/main/src/api"
 	"github.com/schollz/find4/server/main/src/database"
 )
 
@@ -17,14 +17,20 @@ func OpenDatabase(family string) error {
 		return err
 	}
 	DATABASES[family] = db_conn
-	// testing
-	// logger.Log.Info("Calibrating on database startup.")
-	// api.Calibrate(db_conn, family, true)
+
+	// control for server shutdowns and crashs
+	// make sure calibration occurs on database startup
+	go func() {
+		err = api.Calibrate(db_conn, family, true)
+		if nil != err {
+			logger.Log.Error(err)
+		}
+	}()
+
 	return nil
 }
 
 func GetDatabase(family string) (*database.Database, error) {
-	// return database.Open(family, false)
 	if _, ok := DATABASES[family]; !ok {
 		err := OpenDatabase(family)
 		return DATABASES[family], err
@@ -54,7 +60,7 @@ func init() {
 			for range DATABASES {
 				c++
 			}
-			logger.Log.Debugf("%v databases", c)
+			logger.Log.Debugf("%v active databases", c)
 
 			for family := range DATABASES {
 				logger.Log.Debugf("%v requests in %v queue", DATABASES[family].GetPending(), family)

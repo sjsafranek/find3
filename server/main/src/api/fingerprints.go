@@ -2,6 +2,7 @@ package api
 
 import (
 	"sync"
+	// "sync/atomic"
 	"time"
 
 	"github.com/schollz/find4/server/main/src/database"
@@ -9,8 +10,7 @@ import (
 )
 
 type UpdateCounterMap struct {
-	// Data maps family -> counts of locations
-	Count map[string]int
+	Queues map[string]time.Time
 	sync.RWMutex
 }
 
@@ -18,8 +18,8 @@ var globalUpdateCounter UpdateCounterMap
 
 func init() {
 	globalUpdateCounter.Lock()
-	defer globalUpdateCounter.Unlock()
-	globalUpdateCounter.Count = make(map[string]int)
+	globalUpdateCounter.Queues = make(map[string]time.Time)
+	globalUpdateCounter.Unlock()
 }
 
 // SaveSensorData will add sensor data to the database
@@ -39,7 +39,8 @@ func SaveSensorData(db *database.Database, p models.SensorData) (err error) {
 	}
 
 	if p.Location != "" {
-		go updateCounter(db, p.Family)
+		// database triggers this
+		go TriggerClassifyEvent(db, p.Family)
 	}
 	return
 }
@@ -50,38 +51,46 @@ func SavePrediction(db *database.Database, s models.SensorData, p models.Locatio
 	return
 }
 
-func updateCounter(db *database.Database, family string) {
+func TriggerClassifyEvent(db *database.Database, family string) {
 	globalUpdateCounter.Lock()
-	if _, ok := globalUpdateCounter.Count[family]; !ok {
-		globalUpdateCounter.Count[family] = 0
+	if _, ok := globalUpdateCounter.Queues[family]; !ok {
+		go calibrationWorker(db, family)
 	}
-	globalUpdateCounter.Count[family]++
-	count := globalUpdateCounter.Count[family]
+	globalUpdateCounter.Queues[family] = time.Now()
 	globalUpdateCounter.Unlock()
+}
 
-	logger.Log.Debugf("'%s' has %d new fingerprints", family, count)
-	if count < 5 {
-		return
-	}
+func calibrationWorker(db *database.Database, family string) {
+	last_classification_time := time.Now()
+	for {
+		// check if event has been triggered
+		if last_classification_time != globalUpdateCounter.Queues[family] {
+			last_classification_time = globalUpdateCounter.Queues[family]
 
-	var lastCalibrationTime time.Time
-	err := db.Get("LastCalibrationTime", &lastCalibrationTime)
-	if err == nil {
-		if time.Since(lastCalibrationTime) < 5*time.Minute {
-			return
+			logger.Log.Debug("Calibrating %v...", family)
+			// var lastCalibrationTime time.Time
+			// err := db.Get("LastCalibrationTime", &lastCalibrationTime)
+			// if err == nil {
+			// 	if time.Since(lastCalibrationTime) < 5*time.Minute {
+			// 		return
+			// 	}
+			// }
+
+			// if any errors occur they get swallowed
+			err := Calibrate(db, family, true)
+			if nil != err {
+				logger.Log.Error(err)
+				continue
+			}
+
+			// debounce the calibration time
+			err = db.Set("LastCalibrationTime", time.Now().UTC())
+			if err != nil {
+				logger.Log.Error(err)
+			}
+			logger.Log.Infof("Calibration for %v complete", family)
 		}
-	}
-	logger.Log.Infof("have %d new fingerprints for '%s', re-calibrating since last calibration was %s", count, family, time.Since(lastCalibrationTime))
-	globalUpdateCounter.Lock()
-	globalUpdateCounter.Count[family] = 0
-	globalUpdateCounter.Unlock()
 
-	// debounce the calibration time
-	err = db.Set("LastCalibrationTime", time.Now().UTC())
-	if err != nil {
-		logger.Log.Error(err)
+		time.Sleep(15 * time.Second)
 	}
-
-	// if any errors occur they get swallowed
-	go Calibrate(db, family, true)
 }

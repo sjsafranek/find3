@@ -292,6 +292,8 @@ func Run() (err error) {
 			} else if percentFloat64 == 0 {
 				errorMessage = "No learning data available, see the documentation for how to get started with learning. "
 			}
+
+			// WHY ISNT THIS AUTOMATICALLY DONE?
 			if efficacy.LastCalibrationTime.IsZero() {
 				errorMessage += "You need to calibrate, press the calibration button."
 			}
@@ -412,11 +414,6 @@ func handlerApiV1Locations(c *gin.Context) {
 		logger.Log.Debugf("[%s] getting information for %d devices", family, len(devices))
 		for i, device := range devices {
 			logger.Log.Debugf("[%s] getting prediction for %s", family, device)
-			// db, err := GetDatabase(family)
-			// if err != nil {
-			// return
-			// continue
-			// }
 			locations[i] = Location{Device: device}
 			locations[i].Sensors, err = db.GetLatest(device)
 			if err != nil {

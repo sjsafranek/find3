@@ -325,21 +325,29 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 
 		var a []models.LocationPrediction
 		if _, ok := preAnalyzed[s.Timestamp]; ok {
-			logger.Log.Info("preAnalyzed")
 			a = preAnalyzed[s.Timestamp]
-		} else {
-			logger.Log.Info("AnalyzeSensorData")
+			logger.Log.Info("preAnalyzed")
+		}
+
+		// if no results for LocationPrediction
+		if 0 == len(a) {
 			var aidata models.LocationAnalysis
 			aidata, err = AnalyzeSensorData(db, s)
 			if err != nil {
 				return
 			}
 			a = aidata.Guesses
+			logger.Log.Info("AnalyzeSensorData")
+		}
+
+		// check for empty slice
+		if 0 == len(a) {
+			err2 := errors.New("Got empty slice")
+			logger.Log.Error(err2)
+			continue
 		}
 
 		// filter on probability
-		logger.Log.Infof("%v", s)
-		logger.Log.Infof("%v", a)
 		if a[0].Probability < minProbability {
 			continue
 		}

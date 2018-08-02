@@ -8,8 +8,10 @@ import (
 	"github.com/sjsafranek/ligneous"
 )
 
+const DEFAULT_DATA_FOLDER = "."
+
 // DataFolder is set to where you want each Sqlite3 database to be stored
-var DataFolder = "."
+var DataFolder = DEFAULT_DATA_FOLDER
 
 // Database is the main structure for holding the information
 // pertaining to the name of the database.
@@ -23,17 +25,3 @@ type Database struct {
 	num_queries  int64
 	lock         sync.RWMutex
 }
-
-// type DatabaseLock struct {
-// 	Locked map[string]bool
-// 	sync.RWMutex
-// }
-//
-// var databaseLock *DatabaseLock
-//
-// func init() {
-// 	databaseLock = new(DatabaseLock)
-// 	databaseLock.Lock()
-// 	defer databaseLock.Unlock()
-// 	databaseLock.Locked = make(map[string]bool)
-// }
