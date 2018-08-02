@@ -610,7 +610,7 @@ func (self *Database) GetDevices() (devices []string, err error) {
 
 func (self *Database) GetLocations() (locations []string, err error) {
 	self.runReadQuery(func(query_id string, db *Database) {
-		err = db.prepareAndRunQueryWithCallback(`SELECT name FROM locations`,
+		err = db.prepareAndRunQueryWithCallback(`SELECT DISTINCT locationid FROM location_predictions`,
 			func(rows *sql.Rows) error {
 				locations = []string{}
 				for rows.Next() {
