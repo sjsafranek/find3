@@ -58,6 +58,9 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 		pc.MarkUnusable()
 		pc.Close()
 
+		// exponential backoff
+		time.Sleep(time.Duration(attempt*attempt) * time.Second)
+
 		return aiSendAndRecieveWithRetry(query, attempt)
 	}
 

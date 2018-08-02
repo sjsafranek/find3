@@ -39,17 +39,18 @@ import (
 // of sensor data are inserted. The LOCATION column is optional and
 // only used for learning/classification.
 func (self *Database) MakeTables() (err error) {
+	logger.Log.Debug("create database tables for %v", self.family)
 	_, err = self.db.Exec(TABLES_SQL)
 	if err != nil {
-		err = errors.Wrap(err, "MakeTables")
 		logger.Log.Error(err)
+		Fatal(err, "failed to create database tables")
 		return
 	}
 	return
 }
 
 func (self *Database) PrepareQuery(query string) (*sql.Stmt, error) {
-	logger.Log.Debug(query)
+	logger.Log.Trace(query)
 	stmt, err := self.db.Prepare(query)
 	if err != nil {
 		panic(err)
@@ -194,7 +195,7 @@ func (self *Database) AddPrediction(timestamp int64, aidata []models.LocationPre
 		}
 
 		query := "INSERT OR REPLACE INTO location_predictions (timestamp, locationid, probability) VALUES (?, ?, ?)"
-		logger.Log.Debug(query)
+		logger.Log.Trace(query)
 		stmt, err := tx.Prepare(query)
 		if err != nil {
 			Fatal(err, "AddPrediction Prepare")
@@ -720,7 +721,6 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 		if err != nil {
 			return
 		}
-		logger.Log.Debug("made tables")
 	}
 	d.StartRequestQueue()
 
@@ -751,7 +751,7 @@ func (self *Database) Close() (err error) {
 }
 
 func (self *Database) GetAllFromQuery(query string) (s []models.SensorData, err error) {
-	logger.Log.Debug(query)
+	logger.Log.Trace(query)
 
 	rows, err := self.db.Query(query)
 	if err != nil {
@@ -871,9 +871,9 @@ func (self *Database) StartRequestQueue() {
 
 			t1 := time.Now()
 			query_id := self.getQId("w")
-			logger.Log.Infof("Running query %v", query_id)
+			logger.Log.Tracef("Running query %v", query_id)
 			request_func(query_id)
-			logger.Log.Debugf("Finished query %v %v", query_id, time.Since(t1))
+			logger.Log.Tracef("Finished query %v %v", query_id, time.Since(t1))
 		}
 	}()
 }

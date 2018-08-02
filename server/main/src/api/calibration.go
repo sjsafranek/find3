@@ -234,8 +234,6 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 				return
 			}
 
-			logger.Log.Criticalf("DEBUGGING %v", predictionAnalysis)
-
 			guessedLocation := aidata.LocationNames[prediction.Locations[0]]
 			predictionAnalysis[prediction.Name][correctLocation][guessedLocation]++
 		}

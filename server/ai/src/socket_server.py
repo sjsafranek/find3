@@ -4,6 +4,7 @@ import time
 import signal
 import socket
 import threading
+# import _thread
 
 import api
 
@@ -15,6 +16,51 @@ logger = NewLogger("tcp")
 TCP_IP = 'localhost'
 TCP_PORT = 7005
 BUFFER_SIZE = 1024
+
+
+def on_new_client(conn, addr):
+    try:
+        payload = ''
+        while True:
+
+            logger.debug("pipe contains {0} bytes".format(len(payload)))
+
+            chunk = conn.recv(BUFFER_SIZE).decode()
+            if not chunk:
+                break
+
+            logger.debug("chunk recieved {0} bytes".format(len(chunk)))
+            payload += chunk
+            if not "\n" in payload:
+                logger.debug("new line not detected in chunk. waiting for more chunks")
+                continue
+
+            parts = payload.split("\n")
+            payload = parts[1]
+
+            if parts[0].count('{') == parts[0].count('}') and 0 != parts[0].count('{'):
+
+                query = json.loads(parts[0])
+                logger.info("IN  {0}".format(json.dumps(query)))
+
+                results = {"success": False, "message": "incorrect usage"}
+                if 'method' in query and 'data' in query:
+                    if 'learn' == query['method']:
+                        results = api.learn(query['data'])
+                    elif 'classify' == query['method']:
+                        results = api.classify(query['data'])
+                elif 'get_cache' == query['method']:
+                    results = api.ai_cache
+
+                logger.info("OUT {0}".format(json.dumps(results)))
+                response = json.dumps(results)
+                conn.send("{0}\n".format(response).encode())
+
+    except Exception as e:
+        logger.error(e)
+
+    logger.warn("client closed socket")
+    conn.close()
 
 
 class TcpServer(threading.Thread):
@@ -36,58 +82,55 @@ class TcpServer(threading.Thread):
             os._exit(1)
 
     def _acceptClients(self):
-        CONNECTIONS = 0
         logger.debug('waiting for connections')
         while not self.event.is_set() :
             conn, addr = self.socket.accept()
             logger.debug('Connected address: {0}'.format(addr))
-            CONNECTIONS += 1
-
-            logger.debug("{0} socket connections".format(CONNECTIONS))
-
-            try:
-                payload = ''
-                while True:
-
-                    logger.debug("pipe contains {0} bytes".format(len(payload)))
-
-                    chunk = conn.recv(BUFFER_SIZE).decode()
-                    if not chunk:
-                        logger.warn("client closed socket")
-                        break
-
-                    logger.debug("chunk recieved {0} bytes".format(len(chunk)))
-                    payload += chunk
-                    if not "\n" in payload:
-                        logger.debug("new line not detected in chunk. waiting for more chunks")
-                        continue
-
-                    parts = payload.split("\n")
-                    payload = parts[1]
-
-                    if parts[0].count('{') == parts[0].count('}') and 0 != parts[0].count('{'):
-
-                        query = json.loads(parts[0])
-                        logger.info("IN  {0}".format(json.dumps(query)))
-
-                        results = {"success": False, "message": "incorrect usage"}
-                        if 'method' in query and 'data' in query:
-                            if 'learn' == query['method']:
-                                results = api.learn(query['data'])
-                            elif 'classify' == query['method']:
-                                results = api.classify(query['data'])
-                        elif 'get_cache' == query['method']:
-                            results = api.ai_cache
-
-                        logger.info("OUT {0}".format(json.dumps(results)))
-                        response = json.dumps(results)
-                        conn.send("{0}\n".format(response).encode())
-
-            except Exception as e:
-                logger.error(e)
-
-            conn.close()
-            CONNECTIONS -= 1
+            # _thread.start_new_thread(on_new_client, (conn, addr))
+            t = threading.Thread(target=on_new_client, args=(conn, addr,))
+            t.start()
+            # try:
+            #     payload = ''
+            #     while True:
+            #
+            #         logger.debug("pipe contains {0} bytes".format(len(payload)))
+            #
+            #         chunk = conn.recv(BUFFER_SIZE).decode()
+            #         if not chunk:
+            #             logger.warn("client closed socket")
+            #             break
+            #
+            #         logger.debug("chunk recieved {0} bytes".format(len(chunk)))
+            #         payload += chunk
+            #         if not "\n" in payload:
+            #             logger.debug("new line not detected in chunk. waiting for more chunks")
+            #             continue
+            #
+            #         parts = payload.split("\n")
+            #         payload = parts[1]
+            #
+            #         if parts[0].count('{') == parts[0].count('}') and 0 != parts[0].count('{'):
+            #
+            #             query = json.loads(parts[0])
+            #             logger.info("IN  {0}".format(json.dumps(query)))
+            #
+            #             results = {"success": False, "message": "incorrect usage"}
+            #             if 'method' in query and 'data' in query:
+            #                 if 'learn' == query['method']:
+            #                     results = api.learn(query['data'])
+            #                 elif 'classify' == query['method']:
+            #                     results = api.classify(query['data'])
+            #             elif 'get_cache' == query['method']:
+            #                 results = api.ai_cache
+            #
+            #             logger.info("OUT {0}".format(json.dumps(results)))
+            #             response = json.dumps(results)
+            #             conn.send("{0}\n".format(response).encode())
+            #
+            # except Exception as e:
+            #     logger.error(e)
+            #
+            # conn.close()
 
     def shutdown(self):
         self.event.set()
