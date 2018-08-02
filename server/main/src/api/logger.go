@@ -12,7 +12,7 @@ func init() {
 
 func Debug(debugMode bool) {
 	if debugMode {
-		logger.SetLevel("debug")
+		logger.SetLevel("trace")
 	} else {
 		logger.SetLevel("info")
 	}

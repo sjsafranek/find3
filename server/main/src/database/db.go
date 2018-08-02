@@ -101,7 +101,6 @@ func (self *Database) runQueryAsync(clbk func(string)) {
 
 func (self *Database) runReadQuery(clbk func(string, *Database)) {
 	query_id := self.getQId("r")
-
 	// open database for reading
 	reader, err := Open(self.family)
 	if nil != err {
@@ -110,7 +109,10 @@ func (self *Database) runReadQuery(clbk func(string, *Database)) {
 	defer reader.Close()
 
 	// run callback
+	logger.Log.Tracef("Running SELECT query %v", query_id)
+	t1 := time.Now()
 	clbk(query_id, reader)
+	logger.Log.Tracef("Finished SELECT query %v %v", query_id, time.Since(t1))
 }
 
 // Get will retrieve the value associated with a key.
@@ -872,9 +874,9 @@ func (self *Database) StartRequestQueue() {
 
 			t1 := time.Now()
 			query_id := self.getQId("w")
-			logger.Log.Tracef("Running query %v", query_id)
+			logger.Log.Tracef("Running INSERT query %v", query_id)
 			request_func(query_id)
-			logger.Log.Tracef("Finished query %v %v", query_id, time.Since(t1))
+			logger.Log.Tracef("Finished INSERT query %v %v", query_id, time.Since(t1))
 
 			self.LastInsertTime = time.Now()
 		}
