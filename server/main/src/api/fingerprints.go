@@ -68,13 +68,6 @@ func calibrationWorker(db *database.Database, family string) {
 			last_classification_time = globalUpdateCounter.Queues[family]
 
 			logger.Log.Debug("Calibrating %v...", family)
-			// var lastCalibrationTime time.Time
-			// err := db.Get("LastCalibrationTime", &lastCalibrationTime)
-			// if err == nil {
-			// 	if time.Since(lastCalibrationTime) < 5*time.Minute {
-			// 		return
-			// 	}
-			// }
 
 			// if any errors occur they get swallowed
 			err := Calibrate(db, family, true)
