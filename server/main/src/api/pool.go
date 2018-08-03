@@ -109,7 +109,9 @@ func init() {
 		for {
 			time.Sleep(10 * time.Second)
 			ai_counter_lock.RLock()
-			logger.Log.Debugf("%v pending AI requests", AI_PENDING)
+			if 0 != AI_PENDING {
+				logger.Log.Debugf("%v pending AI requests", AI_PENDING)
+			}
 			ai_counter_lock.RUnlock()
 		}
 	}()

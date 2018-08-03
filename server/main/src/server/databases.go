@@ -60,10 +60,15 @@ func init() {
 			for range DATABASES {
 				c++
 			}
-			logger.Log.Debugf("%v active databases", c)
 
-			for family := range DATABASES {
-				logger.Log.Debugf("%v requests in %v queue", DATABASES[family].GetPending(), family)
+			if 0 != c {
+				logger.Log.Debugf("%v active databases", c)
+				for family := range DATABASES {
+					pending := DATABASES[family].GetPending()
+					if 0 != pending {
+						logger.Log.Debugf("%v requests in %v queue", pending, family)
+					}
+				}
 			}
 		}
 	}()
