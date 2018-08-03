@@ -681,7 +681,7 @@ func (self *Database) GetAllFromQuery(query string, args ...interface{}) ([]mode
 	// 	|| ']'
 	// `, query)
 
-	logger.Log.Critical(query)
+	logger.Log.Trace(query)
 
 	s := []models.SensorData{}
 

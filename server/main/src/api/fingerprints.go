@@ -65,9 +65,6 @@ func calibrationWorker(db *database.Database, family string) {
 	last_classification_event_time := time.Now()
 	for {
 
-		logger.Log.Critical(db.LastInsertTime.Sub(last_classification_time))
-		logger.Log.Critical(1*time.Minute < db.LastInsertTime.Sub(last_classification_time))
-		logger.Log.Critical(last_classification_event_time != globalUpdateCounter.Queues[family])
 		if 1*time.Minute < db.LastInsertTime.Sub(last_classification_time) || last_classification_event_time != globalUpdateCounter.Queues[family] {
 
 			// if last_classification_time != globalUpdateCounter.Queues[family] {
