@@ -20,12 +20,6 @@ func OpenDatabase(family string) error {
 
 	// control for server shutdowns and crashs
 	// make sure calibration occurs on database startup
-	// go func() {
-	// 	err = api.Calibrate(db_conn, family, true)
-	// 	if nil != err {
-	// 		logger.Log.Error(err)
-	// 	}
-	// }()
 	go api.DatabaseWorker(db_conn, family)
 
 	return nil
@@ -53,6 +47,7 @@ func DeleteDatabase(family string) error {
 func init() {
 	DATABASES = make(map[string]*database.Database)
 
+	// debugging goroutine to report database write queues
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
@@ -76,6 +71,7 @@ func init() {
 
 }
 
+// Shutdown closes databases for a graceful shutdown
 func Shutdown() {
 	for family := range DATABASES {
 		logger.Log.Warnf("Closing %v database", family)

@@ -12,8 +12,10 @@ var (
 )
 
 func init() {
-	// make queue length of 1 to block channel
+	// make queue length of 2 to block channel
+	// this will result in rate limiting of AI calibrations.
 	calibration_queue = make(chan func(), 2)
+	// Spawn goroutines to calibrate database
 	go calibrationWorker()
 	go calibrationWorker()
 }
@@ -34,10 +36,6 @@ func SaveSensorData(db *database.Database, p models.SensorData) (err error) {
 		return
 	}
 
-	// if p.Location != "" {
-	// database triggers this
-	// go TriggerClassifyEvent(db, p.Family)
-	// }
 	return
 }
 
@@ -47,13 +45,18 @@ func SavePrediction(db *database.Database, s models.SensorData, p models.Locatio
 	return
 }
 
+// DatabaseWorker monitors database for changes and schedules AI calibration.
 func DatabaseWorker(db *database.Database, family string) {
+	// defend against historic database inserts
 	var last_sensor_insert_timestamp int64
-	for {
+	var last_sensor_count int
 
+	// loop
+	for {
 		should_calibrate := false
 
-		// check last calibration time
+		// compare calibration timestamp and last sensor timestamp
+		// defend against historic inserts
 		var last_calibration_time time.Time
 		err := db.Get("LastCalibrationTime", &last_calibration_time)
 		if nil != err {
@@ -61,26 +64,45 @@ func DatabaseWorker(db *database.Database, family string) {
 			should_calibrate = true
 		}
 
-		// check last sensor timestamp
 		ts, err := db.GetLastSensorTimestampWithLocationId()
 		if nil != err {
 			logger.Log.Error(err)
 			should_calibrate = true
 		}
 
-		// check against last value (historic datasets)
 		if ts != last_sensor_insert_timestamp {
 			last_sensor_insert_timestamp = ts
 			last_sensor_insert := time.Unix(ts/1000, 0)
-
 			if 2*time.Minute < last_sensor_insert.Sub(last_calibration_time) {
 				should_calibrate = true
+				logger.Log.Debugf("New sensors found, calibrating %v", family)
 			}
-
 		}
+		//.end
+
+		// Compare sensor counts
+		current_sensor_count, err := db.NumDevicesWithLocation()
+		if nil != err {
+			logger.Log.Error(err)
+			should_calibrate = true
+		}
+
+		if last_sensor_count != current_sensor_count {
+			last_sensor_count = current_sensor_count
+			should_calibrate = true
+			logger.Log.Debugf("Sensor counts don't match, calibrating %v", family)
+		}
+
+		if 0 == current_sensor_count {
+			should_calibrate = false
+		}
+		//.end
 
 		// calibrate database or pass
 		if should_calibrate {
+			// put callback function into calibration_queue
+			// this will schedule calibration with the
+			// runing calibrationWorker processes.
 			calibration_queue <- func() {
 				logger.Log.Warnf("Calibrating %v...", family)
 				// if any errors occur they get swallowed
@@ -92,13 +114,14 @@ func DatabaseWorker(db *database.Database, family string) {
 				logger.Log.Infof("Calibration for %v complete", family)
 			}
 		} else {
-			logger.Log.Warnf("Calibration not needed for %v", family)
+			logger.Log.Debugf("Calibration not needed for %v", family)
 		}
 
 		time.Sleep(60 * time.Second)
 	}
 }
 
+// calibrationWorker reads from calibration_queue and runs AI calibration
 func calibrationWorker() {
 	for clbk := range calibration_queue {
 		clbk()
