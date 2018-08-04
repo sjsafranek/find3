@@ -67,7 +67,6 @@ func calibrationWorker(db *database.Database, family string) {
 
 		if 1*time.Minute < db.LastInsertTime.Sub(last_classification_time) || last_classification_event_time != globalUpdateCounter.Queues[family] {
 
-			// if last_classification_time != globalUpdateCounter.Queues[family] {
 			last_classification_event_time = globalUpdateCounter.Queues[family]
 
 			logger.Log.Warnf("Calibrating %v...", family)
@@ -88,8 +87,6 @@ func calibrationWorker(db *database.Database, family string) {
 
 			last_classification_time = time.Now()
 		}
-
-		// }
 
 		time.Sleep(60 * time.Second)
 	}
