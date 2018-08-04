@@ -215,6 +215,21 @@ func (self *Database) Set(key string, value interface{}) error {
 	return nil
 }
 
+// Set will set a value in the database, when using it like a keystore.
+func (self *Database) SetBatch(key string, value interface{}) error {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	self.insertAsync(func(query_id string) {
+		self.insert(query_id, "INSERT OR REPLACE INTO keystore(key,value) VALUES (?, ?)", func(stmt *sql.Stmt) error {
+			_, err = stmt.Exec(key, string(b))
+			return err
+		})
+	})
+	return nil
+}
+
 // Dump will output the string version of the database
 func (self *Database) Dump() (dumped string, err error) {
 	var b bytes.Buffer
@@ -326,6 +341,19 @@ func (self *Database) GetLastSensorTimestamp() (int64, error) {
 	})
 	return timestamp, err
 }
+
+// You should check for the last sensor with a nonzero locationid
+func (self *Database) GetLastSensorTimestampWithLocationId() (int64, error) {
+	var timestamp int64
+	err := self.Select(func(query_id string, db *Database) error {
+		return self.queryRow("SELECT timestamp FROM sensors WHERE locationid != '' ORDER BY timestamp DESC LIMIT 1", func(row *sql.Row) error {
+			return row.Scan(&timestamp)
+		})
+	})
+	return timestamp, err
+}
+
+//.end
 
 // Get will retrieve the value associated with a key.
 func (self *Database) TotalLearnedCount() (int64, error) {

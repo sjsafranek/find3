@@ -1,25 +1,21 @@
 package api
 
 import (
-	"sync"
-	// "sync/atomic"
 	"time"
 
 	"github.com/schollz/find4/server/main/src/database"
 	"github.com/schollz/find4/server/main/src/models"
 )
 
-type UpdateCounterMap struct {
-	Queues map[string]time.Time
-	sync.RWMutex
-}
-
-var globalUpdateCounter UpdateCounterMap
+var (
+	calibration_queue chan func()
+)
 
 func init() {
-	globalUpdateCounter.Lock()
-	globalUpdateCounter.Queues = make(map[string]time.Time)
-	globalUpdateCounter.Unlock()
+	// make queue length of 1 to block channel
+	calibration_queue = make(chan func(), 2)
+	go calibrationWorker()
+	go calibrationWorker()
 }
 
 // SaveSensorData will add sensor data to the database
@@ -38,10 +34,10 @@ func SaveSensorData(db *database.Database, p models.SensorData) (err error) {
 		return
 	}
 
-	if p.Location != "" {
-		// database triggers this
-		go TriggerClassifyEvent(db, p.Family)
-	}
+	// if p.Location != "" {
+	// database triggers this
+	// go TriggerClassifyEvent(db, p.Family)
+	// }
 	return
 }
 
@@ -51,44 +47,60 @@ func SavePrediction(db *database.Database, s models.SensorData, p models.Locatio
 	return
 }
 
-func TriggerClassifyEvent(db *database.Database, family string) {
-	globalUpdateCounter.Lock()
-	if _, ok := globalUpdateCounter.Queues[family]; !ok {
-		go calibrationWorker(db, family)
-	}
-	globalUpdateCounter.Queues[family] = time.Now()
-	globalUpdateCounter.Unlock()
-}
-
-func calibrationWorker(db *database.Database, family string) {
-	last_classification_time := time.Now()
-	last_classification_event_time := time.Now()
+func DatabaseWorker(db *database.Database, family string) {
+	var last_sensor_insert_timestamp int64
 	for {
 
-		if 1*time.Minute < db.LastInsertTime.Sub(last_classification_time) || last_classification_event_time != globalUpdateCounter.Queues[family] {
+		should_calibrate := false
 
-			last_classification_event_time = globalUpdateCounter.Queues[family]
+		// check last calibration time
+		var last_calibration_time time.Time
+		err := db.Get("LastCalibrationTime", &last_calibration_time)
+		if nil != err {
+			logger.Log.Error(err)
+			should_calibrate = true
+		}
 
-			logger.Log.Warnf("Calibrating %v...", family)
+		// check last sensor timestamp
+		ts, err := db.GetLastSensorTimestampWithLocationId()
+		if nil != err {
+			logger.Log.Error(err)
+			should_calibrate = true
+		}
 
-			// if any errors occur they get swallowed
-			err := Calibrate(db, family, true)
-			if nil != err {
-				logger.Log.Error(err)
-				continue
+		// check against last value (historic datasets)
+		if ts != last_sensor_insert_timestamp {
+			last_sensor_insert_timestamp = ts
+			last_sensor_insert := time.Unix(ts/1000, 0)
+
+			if 2*time.Minute < last_sensor_insert.Sub(last_calibration_time) {
+				should_calibrate = true
 			}
 
-			// debounce the calibration time
-			err = db.Set("LastCalibrationTime", time.Now().UTC())
-			if err != nil {
-				logger.Log.Error(err)
-			}
-			logger.Log.Infof("Calibration for %v complete", family)
+		}
 
-			last_classification_time = time.Now()
+		// calibrate database or pass
+		if should_calibrate {
+			calibration_queue <- func() {
+				logger.Log.Warnf("Calibrating %v...", family)
+				// if any errors occur they get swallowed
+				err := Calibrate(db, family, true)
+				if nil != err {
+					logger.Log.Error(err)
+					return
+				}
+				logger.Log.Infof("Calibration for %v complete", family)
+			}
+		} else {
+			logger.Log.Warnf("Calibration not needed for %v", family)
 		}
 
 		time.Sleep(60 * time.Second)
 	}
+}
 
+func calibrationWorker() {
+	for clbk := range calibration_queue {
+		clbk()
+	}
 }

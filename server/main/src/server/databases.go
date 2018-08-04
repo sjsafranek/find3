@@ -20,12 +20,13 @@ func OpenDatabase(family string) error {
 
 	// control for server shutdowns and crashs
 	// make sure calibration occurs on database startup
-	go func() {
-		err = api.Calibrate(db_conn, family, true)
-		if nil != err {
-			logger.Log.Error(err)
-		}
-	}()
+	// go func() {
+	// 	err = api.Calibrate(db_conn, family, true)
+	// 	if nil != err {
+	// 		logger.Log.Error(err)
+	// 	}
+	// }()
+	go api.DatabaseWorker(db_conn, family)
 
 	return nil
 }

@@ -338,6 +338,8 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 		logger.Log.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
 	}
 
+	// TODO
+	// Insert batched
 	err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
 	if err != nil {
 		logger.Log.Error(err)
@@ -366,6 +368,8 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 	if err != nil {
 		logger.Log.Error(err)
 	}
+	//.end
+
 	return
 }
 
