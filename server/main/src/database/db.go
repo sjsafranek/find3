@@ -550,7 +550,7 @@ func (self *Database) GetLocationCounts() (map[string]int, error) {
 	return self.getUniqueCounts(`
 		SELECT '{' || (
 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
-				SELECT '"' || sensors.locationid || '": ' || COUNT(sensors.timestamp)
+				SELECT '"' || sensors.locationid || '": ' || COUNT(sensors.timestamp) AS Counts
 				FROM sensors
 				GROUP BY sensors.locationid
 			)
