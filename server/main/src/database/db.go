@@ -343,17 +343,16 @@ func (self *Database) GetLastSensorTimestamp() (int64, error) {
 }
 
 // You should check for the last sensor with a nonzero locationid
-func (self *Database) GetLastSensorTimestampWithLocationId() (int64, error) {
-	var timestamp int64
+// func (self *Database) GetLastSensorTimestampWithLocationId() (int64, error) {
+func (self *Database) GetLastSensorInsertTimeWithLocationId() (time.Time, error) {
+	var timestamp time.Time
 	err := self.Select(func(query_id string, db *Database) error {
-		return self.queryRow("SELECT timestamp FROM sensors WHERE locationid != '' ORDER BY timestamp DESC LIMIT 1", func(row *sql.Row) error {
+		return self.queryRow("SELECT update_at FROM sensors WHERE locationid != '' ORDER BY timestamp DESC LIMIT 1", func(row *sql.Row) error {
 			return row.Scan(&timestamp)
 		})
 	})
 	return timestamp, err
 }
-
-//.end
 
 // Get will retrieve the value associated with a key.
 func (self *Database) TotalLearnedCount() (int64, error) {
@@ -479,7 +478,6 @@ func (self *Database) getUniqueCounts(query string) (map[string]int, error) {
 }
 
 func (self *Database) GetDeviceCountsFromDevices(devices []string) (map[string]int, error) {
-	// counts := make(map[string]int)
 	if 0 == len(devices) {
 		return make(map[string]int), nil
 	}
@@ -492,31 +490,9 @@ func (self *Database) GetDeviceCountsFromDevices(devices []string) (map[string]i
 				GROUP BY sensors.deviceid
 			)
 		) || '}'`, strings.Join(devices, "','")))
-	// err := self.Select(func(query_id string, db *Database) error {
-	// 	return db.runQuery(fmt.Sprintf(`
-	// 		SELECT '{' || (
-	// 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
-	// 				SELECT '"' || deviceid || '": ' || COUNT(sensors.timestamp) AS counts
-	// 				FROM sensors
-	// 				WHERE deviceid IN ('%s')
-	// 				GROUP BY sensors.deviceid
-	// 			)
-	// 		) || '}'`, strings.Join(devices, "','")),
-	// 		func(rows *sql.Rows) error {
-	// 			var results string
-	// 			err := rows.Scan(&results)
-	// 			if nil != err {
-	// 				return err
-	// 			}
-	// 			return json.Unmarshal([]byte(results), &counts)
-	//
-	// 		})
-	// })
-	// return counts, err
 }
 
 func (self *Database) GetDeviceCounts() (map[string]int, error) {
-	// counts := make(map[string]int)
 	return self.getUniqueCounts(`
 		SELECT '{' || (
 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
@@ -525,56 +501,17 @@ func (self *Database) GetDeviceCounts() (map[string]int, error) {
 				GROUP BY sensors.deviceid
 			)
 		) || '}'`)
-	// err := self.Select(func(query_id string, db *Database) error {
-	// 	return db.runQuery(`
-	// 		SELECT '{' || (
-	// 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
-	// 				SELECT '"' || deviceid || '": ' || COUNT(sensors.timestamp) AS counts
-	// 				FROM sensors
-	// 				GROUP BY sensors.deviceid
-	// 			)
-	// 		) || '}'`,
-	// 		func(rows *sql.Rows) error {
-	// 			var results string
-	// 			err := rows.Scan(&results)
-	// 			if nil != err {
-	// 				return err
-	// 			}
-	// 			return json.Unmarshal([]byte(results), &counts)
-	// 		})
-	// })
-	// return counts, err
 }
 
 func (self *Database) GetLocationCounts() (map[string]int, error) {
 	return self.getUniqueCounts(`
 		SELECT '{' || (
 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
-				SELECT '"' || sensors.locationid || '": ' || COUNT(sensors.timestamp) AS Counts
+				SELECT '"' || sensors.locationid || '": ' || COUNT(sensors.timestamp) AS counts
 				FROM sensors
 				GROUP BY sensors.locationid
 			)
 		) || '}'`)
-	// counts := make(map[string]int)
-	// err := self.Select(func(query_id string, db *Database) error {
-	// 	return db.runQuery(`
-	// 		SELECT '{' || (
-	// 			SELECT IFNULL(GROUP_CONCAT(counts), '') FROM (
-	// 				SELECT '"' || sensors.locationid || '": ' || COUNT(sensors.timestamp)
-	// 				FROM sensors
-	// 				GROUP BY sensors.locationid
-	// 			)
-	// 		) || '}'`,
-	// 		func(rows *sql.Rows) error {
-	// 			var results string
-	// 			err := rows.Scan(&results)
-	// 			if nil != err {
-	// 				return err
-	// 			}
-	// 			return json.Unmarshal([]byte(results), &counts)
-	// 		})
-	// })
-	// return counts, err
 }
 
 // GetAllForClassification will return a sensor data for classifying

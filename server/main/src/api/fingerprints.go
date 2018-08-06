@@ -48,7 +48,7 @@ func SavePrediction(db *database.Database, s models.SensorData, p models.Locatio
 // DatabaseWorker monitors database for changes and schedules AI calibration.
 func DatabaseWorker(db *database.Database, family string) {
 	// defend against historic database inserts
-	var last_sensor_insert_timestamp int64
+	var last_sensor_insert_timestamp time.Time
 	var last_sensor_count int
 
 	// loop
@@ -64,7 +64,7 @@ func DatabaseWorker(db *database.Database, family string) {
 			should_calibrate = true
 		}
 
-		ts, err := db.GetLastSensorTimestampWithLocationId()
+		ts, err := db.GetLastSensorInsertTimeWithLocationId()
 		if nil != err {
 			logger.Log.Error(err)
 			should_calibrate = true
@@ -72,8 +72,7 @@ func DatabaseWorker(db *database.Database, family string) {
 
 		if ts != last_sensor_insert_timestamp {
 			last_sensor_insert_timestamp = ts
-			last_sensor_insert := time.Unix(ts/1000, 0)
-			if 2*time.Minute < last_sensor_insert.Sub(last_calibration_time) {
+			if 2*time.Minute < last_sensor_insert_timestamp.Sub(last_calibration_time) {
 				should_calibrate = true
 				logger.Log.Debugf("New sensors found, calibrating %v", family)
 			}
