@@ -23,22 +23,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/schollz/find4/server/main/src/models"
 	"github.com/schollz/sqlite3dump"
-	// "github.com/schollz/stringsizer"
-	// "github.com/satori/go.uuid"
-	// "github.com/schollz/find4/server/main/src/api"
 )
 
-// MakeTables creates two tables, a `keystore` table:
-//
-// 	KEY (TEXT)	VALUE (TEXT)
-//
-// and also a `sensors` table for the sensor data:
-//
-// 	TIMESTAMP (INTEGER)	DEVICE(TEXT) LOCATION(TEXT)
-//
-// the sensor table will dynamically create more columns as new types
-// of sensor data are inserted. The LOCATION column is optional and
-// only used for learning/classification.
+// MakeTables creates database tables and triggers.
 func (self *Database) MakeTables() (err error) {
 	logger.Log.Debugf("create database tables for %v", self.family)
 	_, err = self.db.Exec(TABLES_SQL)
@@ -64,6 +51,7 @@ func (self *Database) queryRow(query string, scanner func(*sql.Row) error, args 
 	return scanner(row)
 }
 
+// PrepareQuery runs the database Prepare method on the supplied query.
 func (self *Database) PrepareQuery(query string) (*sql.Stmt, error) {
 	logger.Log.Trace(query)
 	stmt, err := self.db.Prepare(query)
@@ -129,6 +117,12 @@ func (self *Database) insertAsync(clbk func(string)) {
 	}
 }
 
+// Select runs a select query contained in a callback function.
+// To have multiple readers a new database connection is opened
+// and passed into the callback function.
+/** TODO
+ *  - Add database connection pool for reads
+ */
 func (self *Database) Select(clbk func(string, *Database) error) error {
 	query_id := self.getQId("r")
 	// open database for reading
@@ -164,6 +158,10 @@ func (self *Database) Get(key string, v interface{}) error {
 	})
 }
 
+// Insert runs an insert query. Since there can only be one writer,
+// only one of these can be run at a time. It is prefered to use one
+// of the pre-cannded insert functions that use the insertAsync or
+// insertSync methods.
 func (self *Database) Insert(query string, executor func(*sql.Stmt) error) error {
 	query_id := self.getQId("w")
 	return self.insert(query_id, query, executor)
@@ -342,8 +340,7 @@ func (self *Database) GetLastSensorTimestamp() (int64, error) {
 	return timestamp, err
 }
 
-// You should check for the last sensor with a nonzero locationid
-// func (self *Database) GetLastSensorTimestampWithLocationId() (int64, error) {
+// GetLastSensorInsertTimeWithLocationId gets the last updated_at timestamp for a sensor with a location.
 func (self *Database) GetLastSensorInsertTimeWithLocationId() (time.Time, error) {
 	var timestamp time.Time
 	err := self.Select(func(query_id string, db *Database) error {
@@ -365,8 +362,6 @@ func (self *Database) TotalLearnedCount() (int64, error) {
 	return count, err
 }
 
-// TODO
-//  - single transaction
 // GetSensorFromGreaterTime will return a sensor data for a given timeframe
 func (self *Database) GetSensorFromGreaterTime(timeBlockInMilliseconds int64) ([]models.SensorData, error) {
 	var sensors []models.SensorData
@@ -382,6 +377,7 @@ func (self *Database) GetSensorFromGreaterTime(timeBlockInMilliseconds int64) ([
 	return sensors, err
 }
 
+// NumDevices returns number of unique devices found in the sensor table
 func (self *Database) NumDevices() (int, error) {
 	var num int
 	err := self.Select(func(query_id string, db *Database) error {
@@ -392,6 +388,7 @@ func (self *Database) NumDevices() (int, error) {
 	return num, err
 }
 
+// NumDevices returns number of unique devices found in the sensor table that have locations
 func (self *Database) NumDevicesWithLocation() (int, error) {
 	var num int
 	err := self.Select(func(query_id string, db *Database) error {
@@ -402,6 +399,8 @@ func (self *Database) NumDevicesWithLocation() (int, error) {
 	return num, err
 }
 
+// GetDeviceFirstTimeFromDevices same as GetDeviceFirstTime but
+// only returns devices supplied in arguments.
 func (self *Database) GetDeviceFirstTimeFromDevices(devices []string) (map[string]time.Time, error) {
 	firstTime := make(map[string]time.Time)
 
@@ -434,6 +433,7 @@ func (self *Database) GetDeviceFirstTimeFromDevices(devices []string) (map[strin
 	return firstTime, err
 }
 
+// GetDeviceFirstTime returns map of timestamps for devices in the sensor table
 func (self *Database) GetDeviceFirstTime() (map[string]time.Time, error) {
 	firstTime := make(map[string]time.Time)
 	err := self.Select(func(query_id string, db *Database) error {
@@ -477,6 +477,7 @@ func (self *Database) getUniqueCounts(query string) (map[string]int, error) {
 	return counts, err
 }
 
+// GetDeviceCountsFromDevices same as GetDeviceCounts but filters based on supplied devices
 func (self *Database) GetDeviceCountsFromDevices(devices []string) (map[string]int, error) {
 	if 0 == len(devices) {
 		return make(map[string]int), nil
@@ -492,6 +493,7 @@ func (self *Database) GetDeviceCountsFromDevices(devices []string) (map[string]i
 		) || '}'`, strings.Join(devices, "','")))
 }
 
+// GetDeviceCounts get counts for devices
 func (self *Database) GetDeviceCounts() (map[string]int, error) {
 	return self.getUniqueCounts(`
 		SELECT '{' || (
@@ -503,6 +505,7 @@ func (self *Database) GetDeviceCounts() (map[string]int, error) {
 		) || '}'`)
 }
 
+// GetLocationCounts returns counts for locations
 func (self *Database) GetLocationCounts() (map[string]int, error) {
 	return self.getUniqueCounts(`
 		SELECT '{' || (
@@ -563,6 +566,7 @@ func (self *Database) parseRowsToStringSlice(rows *sql.Rows) ([]string, error) {
 
 }
 
+// GetDevices returns list of deviceids
 func (self *Database) GetDevices() ([]string, error) {
 	var devices []string
 	err := self.Select(func(query_id string, db *Database) error {
@@ -589,6 +593,7 @@ func (self *Database) GetDevices() ([]string, error) {
 	return devices, err
 }
 
+// GetLocations return list of locationids
 func (self *Database) GetLocations() ([]string, error) {
 	var locations []string
 	err := self.Select(func(query_id string, db *Database) error {
@@ -606,6 +611,7 @@ func (self *Database) GetLocations() ([]string, error) {
 	return locations, err
 }
 
+// GetFamilies returns list of family names
 func GetFamilies() (families []string) {
 	files, err := ioutil.ReadDir(DataFolder)
 	if err != nil {
@@ -633,6 +639,7 @@ func GetFamilies() (families []string) {
 	return
 }
 
+// DeleteLocation deletes sensors that have a locationid
 func (self *Database) DeleteLocation(location_id string) error {
 	var err error
 	self.insertAsync(func(query_id string) {
@@ -650,6 +657,7 @@ func (self *Database) DeleteLocation(location_id string) error {
 	return err
 }
 
+// Delete destroys database file
 func (self *Database) Delete() (err error) {
 	// logger.Log.Debugf("deleting %s", self.family)
 	return os.Remove(self.name)
@@ -755,6 +763,7 @@ func (self *Database) SetGPS(p models.SensorData) error {
 	return nil
 }
 
+// StartRequestQueue starts insert queue for callbacks
 func (self *Database) StartRequestQueue() {
 	self.requestQueue = make(chan func(query_id string), 100)
 	var c int64 = 0
@@ -783,15 +792,18 @@ func (self *Database) getQId(mode string) string {
 	return query_id
 }
 
+// GetPending returns pending insert requests
 func (self *Database) GetPending() int {
 	return len(self.requestQueue)
 }
 
+// Fatal wraps error with a wrapper and panics
 func Fatal(err error, wrapper string) {
 	err = errors.Wrap(err, wrapper)
 	panic(err)
 }
 
+// Exists checks for the presense of a database file
 func Exists(name string) (err error) {
 	name = strings.TrimSpace(name)
 	name = path.Join(DataFolder, base58.FastBase58Encoding([]byte(name))+".sqlite3.db")
@@ -844,6 +856,7 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 	return
 }
 
+// GetMD5Hash creturns md5 hash of string
 func GetMD5Hash(text string) string {
 	hasher := md5.New()
 	hasher.Write([]byte(text))

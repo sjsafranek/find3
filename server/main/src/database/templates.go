@@ -1,5 +1,6 @@
 package database
 
+// SENSOR_SQL is the sql json template for a sensor object.
 var SENSOR_SQL = `
 	'{'||
 	'"timestamp": ' ||  timestamp ||','||
@@ -11,6 +12,8 @@ var SENSOR_SQL = `
 	'"sensor": ' ||  sensor || '}'
 `
 
+// LOCATION_PREDICTION_SQL is the sql json template for
+// a location_prediction object.
 var LOCATION_PREDICTION_SQL = `
 	'{'||
 	'"timestamp": ' ||  timestamp ||','||

@@ -1,7 +1,10 @@
 package database
 
-// TODO
-// AUTOINCREMENT for ids?
+// TABLES_SQL defines the main database tables
+// and trigger functions.
+/* TODO
+   AUTOINCREMENT for ids?
+*/
 var TABLES_SQL = `
     CREATE TABLE IF NOT EXISTS keystore (
         key TEXT NOT NULL PRIMARY KEY,
