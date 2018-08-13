@@ -193,26 +193,39 @@ func Run() (err error) {
 			if err != nil {
 				logger.Log.Warn("could not get TotalLearnedCount")
 			}
-			var percentFloat64 float64
-			err = db.Get("PercentCorrect", &percentFloat64)
+
+			// var percentFloat64 float64
+			// err = db.Get("PercentCorrect", &percentFloat64)
+			// if err != nil {
+			// 	logger.Log.Warn("No learning data available")
+			// }
+			// efficacy.PercentCorrect = int64(100 * percentFloat64)
+			// err = db.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
+			// if err != nil {
+			// 	logger.Log.Warn("could not get LastCalibrationTime")
+			// }
+			// var accuracyBreakdown map[string]float64
+			// err = db.Get("AccuracyBreakdown", &accuracyBreakdown)
+			// if err != nil {
+			// 	logger.Log.Warn("could not get AccuracyBreakdown")
+			// }
+			// var confusionMetrics map[string]map[string]models.BinaryStats
+			// err = db.Get("AlgorithmEfficacy", &confusionMetrics)
+			// if err != nil {
+			// 	logger.Log.Warn("could not get AlgorithmEfficacy")
+			// }
+
+			// DEBUGING
+			calibration, err := db.GetCalibration()
 			if err != nil {
-				logger.Log.Warn("No learning data available")
+				logger.Log.Warn("could not get calibration")
 			}
-			efficacy.PercentCorrect = int64(100 * percentFloat64)
-			err = db.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
-			if err != nil {
-				logger.Log.Warn("could not get LastCalibrationTime")
-			}
-			var accuracyBreakdown map[string]float64
-			err = db.Get("AccuracyBreakdown", &accuracyBreakdown)
-			if err != nil {
-				logger.Log.Warn("could not get AccuracyBreakdown")
-			}
-			var confusionMetrics map[string]map[string]models.BinaryStats
-			err = db.Get("AlgorithmEfficacy", &confusionMetrics)
-			if err != nil {
-				logger.Log.Warn("could not get AlgorithmEfficacy")
-			}
+			percentFloat64 := calibration.PercentCorrect
+			efficacy.PercentCorrect = int64(100 * calibration.PercentCorrect)
+			efficacy.LastCalibrationTime = calibration.CalibrationTime
+			accuracyBreakdown := calibration.AccuracyBreakdown
+			// confusionMetrics := calibration.AlgorithmEfficacy
+			//.end
 
 			logger.Log.Debugf("[%s] getting location count", family)
 			locationCounts, err := db.GetLocationCounts()
@@ -457,21 +470,36 @@ func handlerEfficacy(c *gin.Context) {
 			return
 		}
 
-		err = db.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
+		// err = db.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
+		// if err != nil {
+		// 	err = errors.Wrap(err, "could not get LastCalibrationTime")
+		// 	return
+		// }
+		// err = db.Get("AccuracyBreakdown", &efficacy.AccuracyBreakdown)
+		// if err != nil {
+		// 	err = errors.Wrap(err, "could not get AccuracyBreakdown")
+		// 	return
+		// }
+		// err = db.Get("AlgorithmEfficacy", &efficacy.ConfusionMetrics)
+		// if err != nil {
+		// 	err = errors.Wrap(err, "could not get AlgorithmEfficacy")
+		// 	return
+		// }
+
+		// DEBUGING
+		calibration, err := db.GetCalibration()
 		if err != nil {
-			err = errors.Wrap(err, "could not get LastCalibrationTime")
+			logger.Log.Warn("could not get calibration")
+			err = errors.Wrap(err, "could not get calibration")
 			return
 		}
-		err = db.Get("AccuracyBreakdown", &efficacy.AccuracyBreakdown)
-		if err != nil {
-			err = errors.Wrap(err, "could not get AccuracyBreakdown")
-			return
-		}
-		err = db.Get("AlgorithmEfficacy", &efficacy.ConfusionMetrics)
-		if err != nil {
-			err = errors.Wrap(err, "could not get AlgorithmEfficacy")
-			return
-		}
+		// percentFloat64 := calibration.PercentCorrect
+		// efficacy.PercentCorrect = int64(100 * calibration.PercentCorrect)
+		efficacy.LastCalibrationTime = calibration.CalibrationTime
+		efficacy.AccuracyBreakdown = calibration.AccuracyBreakdown
+		efficacy.ConfusionMetrics = calibration.AlgorithmEfficacy
+		//.end
+
 		return
 	}(c)
 	if err != nil {

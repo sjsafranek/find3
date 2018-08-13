@@ -50,6 +50,7 @@ func (a *Algorithm) Fit(db *database.Database, datas []models.SensorData) (err e
 	}
 
 	err = db.Set("NB1", a.Data)
+	// err = db.SetLearning("NB1", a.Data)
 	return
 }
 

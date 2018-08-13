@@ -18,7 +18,8 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 
-	_ "github.com/mattn/go-sqlite3"
+	// _ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
 	"github.com/schollz/find4/server/main/src/models"
@@ -141,8 +142,8 @@ func (self *Database) Select(clbk func(string, *Database) error) error {
 	return err
 }
 
-// Get will retrieve the value associated with a key.
-// channel event listener makes database call synchronous
+// // Get will retrieve the value associated with a key.
+// // channel event listener makes database call synchronous
 func (self *Database) Get(key string, v interface{}) error {
 	return self.Select(func(query_id string, db *Database) error {
 		var result string
@@ -212,6 +213,132 @@ func (self *Database) Set(key string, value interface{}) error {
 	})
 	return nil
 }
+
+// AddCalibration inserts calibration data as single transaction in a single row
+// TODO
+// INSERT AND GET AS A SINGLE TRANSACTION
+func (self *Database) AddCalibration(ProbabilityMeans, ProbabilitiesOfBestGuess, PercentCorrect, AccuracyBreakdown, PredictionAnalysis, AlgorithmEfficacy interface{}) error {
+	probability_means, err := json.Marshal(ProbabilityMeans)
+	if err != nil {
+		return err
+	}
+	probabilities_of_best_guess, err := json.Marshal(ProbabilitiesOfBestGuess)
+	if err != nil {
+		return err
+	}
+	percent_correct, err := json.Marshal(PercentCorrect)
+	if err != nil {
+		return err
+	}
+	accuracy_breakdown, err := json.Marshal(AccuracyBreakdown)
+	if err != nil {
+		return err
+	}
+	prediction_analysis, err := json.Marshal(PredictionAnalysis)
+	if err != nil {
+		return err
+	}
+	algorithm_efficacy, err := json.Marshal(AlgorithmEfficacy)
+	if err != nil {
+		return err
+	}
+
+	self.insertAsync(func(query_id string) {
+		self.insert(query_id, `
+			INSERT OR REPLACE INTO calibrations(
+				probability_means,
+				probabilities_of_best_guess,
+				percent_correct,
+				accuracy_breakdown,
+				prediction_analysis,
+				algorithm_efficacy
+			)
+			VALUES (?, ?, ?, ?, ?, ?)`, func(stmt *sql.Stmt) error {
+			_, err = stmt.Exec(
+				string(probability_means),
+				string(probabilities_of_best_guess),
+				string(percent_correct),
+				string(accuracy_breakdown),
+				string(prediction_analysis),
+				string(algorithm_efficacy))
+			return err
+		})
+	})
+	return nil
+}
+
+// GetCalibration
+func (self *Database) GetCalibration() (CalibrationModel, error) {
+	var calibration CalibrationModel
+	var result string
+
+	err := self.Select(func(query_id string, db *Database) error {
+		return self.queryRow(`
+		SELECT `+CALIBRATION_SQL+`
+		FROM calibrations
+		ORDER BY calibration_time DESC
+		LIMIT 1
+		`, func(row *sql.Row) error {
+			return row.Scan(&result)
+		})
+	})
+
+	if nil != err {
+		return calibration, err
+	}
+
+	// unmarshal outside of select to close database faster
+	err = json.Unmarshal([]byte(result), &calibration)
+	return calibration, err
+}
+
+/*
+// SetLearning
+func (self *Database) SetLearning(algo string, data interface{}) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	self.insertAsync(func(query_id string) {
+		self.insert(query_id, `
+			INSERT OR REPLACE INTO learning(
+				algorithm,
+				data
+			)
+			VALUES (?, ?)`, func(stmt *sql.Stmt) error {
+			_, err = stmt.Exec(algo, string(raw))
+			return err
+		})
+	})
+	return nil
+}
+
+// GetLearning
+func (self *Database) GetLearning(algo string) (interface{}, error) {
+	var data map[string]map[string]float64
+	var result string
+
+	err := self.Select(func(query_id string, db *Database) error {
+		return self.queryRow(`
+		SELECT data
+		FROM learning
+		WHERE algorithm = '`+algo+`'
+		ORDER BY insert_time DESC
+		LIMIT 1
+		`, func(row *sql.Row) error {
+			return row.Scan(&result)
+		})
+	})
+
+	if nil != err {
+		return data, err
+	}
+
+	// unmarshal outside of select to close database faster
+	err = json.Unmarshal([]byte(result), &data)
+	return data, err
+}
+*/
 
 // Set will set a value in the database, when using it like a keystore.
 func (self *Database) SetBatch(key string, value interface{}) error {
@@ -862,6 +989,23 @@ func GetMD5Hash(text string) string {
 	hasher.Write([]byte(text))
 	return hex.EncodeToString(hasher.Sum(nil))
 }
+
+/*
+func init() {
+
+	// formatter := func(re, s string) (bool, error) {
+	formatter := func(re, s string) (string, error) {
+		return fmt.Sprintf(":) %v :)", s), nil
+	}
+
+	sql.Register("sqlite3_with_go_func",
+		&sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				return conn.RegisterFunc("formatter", formatter, true)
+			},
+		})
+}
+*/
 
 // // GetGPS will return a GPS for a given mac, if it exists
 // // if it doesn't exist it will return an error

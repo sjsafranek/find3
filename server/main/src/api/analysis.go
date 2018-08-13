@@ -160,8 +160,16 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 	// 	logger.Log.Warnf("[%s] nb2 classify: %s", s.Family, cResult.err.Error())
 	// }
 
-	var algorithmEfficacy map[string]map[string]models.BinaryStats
-	db.Get("AlgorithmEfficacy", &algorithmEfficacy)
+	// var algorithmEfficacy map[string]map[string]models.BinaryStats
+	// db.Get("AlgorithmEfficacy", &algorithmEfficacy)
+	// DEBUGGING
+	calibration, err := db.GetCalibration()
+	if err != nil {
+		logger.Log.Warn("could not get calibration")
+	}
+	algorithmEfficacy := calibration.AlgorithmEfficacy
+	//.end
+
 	aidata.Guesses = determineBestGuess(aidata, algorithmEfficacy)
 
 	if aidata.IsUnknown {

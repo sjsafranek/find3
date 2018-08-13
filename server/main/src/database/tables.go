@@ -2,9 +2,6 @@ package database
 
 // TABLES_SQL defines the main database tables
 // and trigger functions.
-/* TODO
-   AUTOINCREMENT for ids?
-*/
 var TABLES_SQL = `
     CREATE TABLE IF NOT EXISTS keystore (
         key TEXT NOT NULL PRIMARY KEY,
@@ -81,4 +78,35 @@ var TABLES_SQL = `
     BEGIN
         UPDATE gps SET update_at=CURRENT_TIMESTAMP WHERE timestamp=OLD.timestamp;
     END;
+
+
+    CREATE TABLE IF NOT EXISTS calibrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        probability_means TEXT,
+        probabilities_of_best_guess TEXT,
+        percent_correct TEXT,
+        accuracy_breakdown TEXT,
+        prediction_analysis TEXT,
+        algorithm_efficacy TEXT,
+        calibration_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        create_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        update_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+
+    CREATE TALE IF NOT EXISTS users (
+        username TEXT,
+        password TEXT,
+        create_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        update_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
 `
+
+// CREATE TABLE IF NOT EXISTS learning (
+//     id INTEGER PRIMARY KEY AUTOINCREMENT,
+//     algorithm TEXT,
+//     data TEXT,
+//     create_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+//     update_at DATETIME DEFAULT CURRENT_TIMESTAMP
+// );

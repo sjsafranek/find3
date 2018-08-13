@@ -338,37 +338,46 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 		logger.Log.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
 	}
 
-	// TODO
-	// Insert batched
-	err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("ProbabilitiesOfBestGuess", ProbabilitiesOfBestGuess)
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("PercentCorrect", float64(correct)/float64(len(datas)))
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("AccuracyBreakdown", accuracyBreakdown)
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("PredictionAnalysis", predictionAnalysis)
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("AlgorithmEfficacy", algorithmEfficacy)
-	if err != nil {
-		logger.Log.Error(err)
-	}
-	err = db.Set("LastCalibrationTime", time.Now().UTC())
-	if err != nil {
-		logger.Log.Error(err)
-	}
+	// // TODO
+	// // Insert batched
+	// err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("ProbabilitiesOfBestGuess", ProbabilitiesOfBestGuess)
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("PercentCorrect", float64(correct)/float64(len(datas)))
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("AccuracyBreakdown", accuracyBreakdown)
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("PredictionAnalysis", predictionAnalysis)
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("AlgorithmEfficacy", algorithmEfficacy)
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
+	// err = db.Set("LastCalibrationTime", time.Now().UTC())
+	// if err != nil {
+	// 	logger.Log.Error(err)
+	// }
 	//.end
+
+	db.AddCalibration(
+		[]float64{goodMean, goodSD, badMean, badSD}, // ProbabilityMeans
+		ProbabilitiesOfBestGuess,                    // ProbabilitiesOfBestGuess
+		float64(correct)/float64(len(datas)),        // PercentCorrect
+		accuracyBreakdown,                           // AccuracyBreakdown
+		predictionAnalysis,                          // PredictionAnalysis
+		algorithmEfficacy,                           // AlgorithmEfficacy
+	)
 
 	return
 }
