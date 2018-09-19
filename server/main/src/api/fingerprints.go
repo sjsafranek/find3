@@ -14,7 +14,7 @@ var (
 func init() {
 	// make queue length of 2 to block channel
 	// this will result in rate limiting of AI calibrations.
-	calibration_queue = make(chan func(), 2)
+	calibration_queue = make(chan func(), 10)
 	// Spawn goroutines to calibrate database
 	go calibrationWorker()
 	go calibrationWorker()
@@ -58,6 +58,8 @@ func DatabaseWorker(db *database.Database, family string) {
 		// compare calibration timestamp and last sensor timestamp
 		// defend against historic inserts
 		var last_calibration_time time.Time
+		// TODO
+		//  - SELECT FROM calibration TABLE
 		err := db.Get("LastCalibrationTime", &last_calibration_time)
 		if nil != err {
 			logger.Error(err)
@@ -75,6 +77,7 @@ func DatabaseWorker(db *database.Database, family string) {
 			if 2*time.Minute < last_sensor_insert_timestamp.Sub(last_calibration_time) {
 				should_calibrate = true
 				logger.Debugf("New sensors found, calibrating %v", family)
+				// logger.Criticalf("New sensors found, calibrating %v", family)
 			}
 		}
 		//.end
@@ -90,6 +93,7 @@ func DatabaseWorker(db *database.Database, family string) {
 			last_sensor_count = current_sensor_count
 			should_calibrate = true
 			logger.Debugf("Sensor counts don't match, calibrating %v", family)
+			// logger.Criticalf("Sensor counts don't match, calibrating %v", family)
 		}
 
 		if 0 == current_sensor_count {
@@ -123,6 +127,9 @@ func DatabaseWorker(db *database.Database, family string) {
 // calibrationWorker reads from calibration_queue and runs AI calibration
 func calibrationWorker() {
 	for clbk := range calibration_queue {
-		clbk()
+		// drain queue
+		if 0 == len(calibration_queue) {
+			clbk()
+		}
 	}
 }

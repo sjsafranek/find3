@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	// "math"
 	"os"
 	"path"
 	"strconv"
@@ -217,30 +218,45 @@ func (self *Database) Set(key string, value interface{}) error {
 // AddCalibration inserts calibration data as single transaction in a single row
 // TODO
 // INSERT AND GET AS A SINGLE TRANSACTION
-func (self *Database) AddCalibration(ProbabilityMeans, ProbabilitiesOfBestGuess, PercentCorrect, AccuracyBreakdown, PredictionAnalysis, AlgorithmEfficacy interface{}) error {
+func (self *Database) AddCalibration(ProbabilityMeans []float64, ProbabilitiesOfBestGuess interface{}, PercentCorrect float64, AccuracyBreakdown interface{}, PredictionAnalysis interface{}, AlgorithmEfficacy interface{}) error {
+
+	// GoLang doesnt support NaN for json.Marshal
+	// Don't return on error...
 	probability_means, err := json.Marshal(ProbabilityMeans)
 	if err != nil {
-		return err
+		fmt.Println(ProbabilityMeans)
+		logger.Warn(err)
+		// return err
 	}
 	probabilities_of_best_guess, err := json.Marshal(ProbabilitiesOfBestGuess)
 	if err != nil {
-		return err
+		fmt.Println(ProbabilitiesOfBestGuess)
+		logger.Warn(err)
+		// return err
 	}
 	percent_correct, err := json.Marshal(PercentCorrect)
 	if err != nil {
-		return err
+		fmt.Println(PercentCorrect)
+		logger.Warn(err)
+		// return err
 	}
 	accuracy_breakdown, err := json.Marshal(AccuracyBreakdown)
 	if err != nil {
-		return err
+		fmt.Println(AccuracyBreakdown)
+		logger.Warn(err)
+		// return err
 	}
 	prediction_analysis, err := json.Marshal(PredictionAnalysis)
 	if err != nil {
-		return err
+		fmt.Println(PredictionAnalysis)
+		logger.Warn(err)
+		// return err
 	}
 	algorithm_efficacy, err := json.Marshal(AlgorithmEfficacy)
 	if err != nil {
-		return err
+		fmt.Println(AlgorithmEfficacy)
+		logger.Warn(err)
+		// return err
 	}
 
 	self.insertAsync(func(query_id string) {
@@ -289,6 +305,12 @@ func (self *Database) GetCalibration() (CalibrationModel, error) {
 
 	// unmarshal outside of select to close database faster
 	err = json.Unmarshal([]byte(result), &calibration)
+
+	fmt.Println(result)
+	if nil != err {
+		panic(err)
+	}
+
 	return calibration, err
 }
 

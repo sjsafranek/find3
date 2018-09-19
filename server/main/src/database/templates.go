@@ -35,16 +35,16 @@ var LOCATION_PREDICTION_SQL = `
 // calibration objects
 var CALIBRATION_SQL = `
 	'{'||
-		'"id" : ' || id ||',||
-		'"probability_means": "' || probability_means ||'",'||
-		'"probabilities_of_best_guess": "' || probabilities_of_best_guess ||'",'||
+		'"id": '|| id ||','||
+		'"probability_means": ' || probability_means ||','||
+		'"probabilities_of_best_guess": ' || probabilities_of_best_guess ||','||
 		'"percent_correct": ' || percent_correct ||','||
-		'"accuracy_breakdown": "' || accuracy_breakdown ||'",'||
-		'"prediction_analysis": "' || prediction_analysis ||'",'||
-		'"algorithm_efficacy": "' || algorithm_efficacy ||'",'||
-		'"calibration_time": "' || calibration_time ||'",'||
-		'"create_at": "' || create_at ||'",'||
-		'"update_at":  "' || update_at ||'"'
+		'"accuracy_breakdown": ' || accuracy_breakdown ||','||
+		'"prediction_analysis": ' || prediction_analysis ||','||
+		'"algorithm_efficacy": ' || algorithm_efficacy ||','||
+		'"calibration_time": "' || strftime('%Y-%m-%dT%H:%M:%SZ', calibration_time) ||'",'||
+		'"create_at": "' || strftime('%Y-%m-%dT%H:%M:%SZ', create_at) ||'",'||
+		'"update_at": "' || strftime('%Y-%m-%dT%H:%M:%SZ', update_at) ||'"'
 	|| '}'
 `
 

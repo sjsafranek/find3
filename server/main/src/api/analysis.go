@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	// cache "github.com/robfig/go-cache"
 	"github.com/schollz/find4/server/main/src/database"
 	"github.com/schollz/find4/server/main/src/learning/nb1"
 	"github.com/schollz/find4/server/main/src/models"
@@ -17,14 +16,6 @@ import (
 // AIPort designates the port for the AI processing
 var AIPort = "8002"
 var DataFolder = "."
-
-// var (
-// 	routeCache *cache.Cache
-// )
-//
-// func init() {
-// 	routeCache = cache.New(5*time.Minute, 10*time.Minute)
-// }
 
 type AnalysisResponse struct {
 	Data    models.LocationAnalysis `json:"analysis"`

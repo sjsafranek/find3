@@ -94,7 +94,7 @@ var TABLES_SQL = `
     );
 
 
-    CREATE TALE IF NOT EXISTS users (
+    CREATE TABLE IF NOT EXISTS users (
         username TEXT,
         password TEXT,
         create_at DATETIME DEFAULT CURRENT_TIMESTAMP,

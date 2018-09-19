@@ -364,10 +364,10 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 	// if err != nil {
 	// 	logger.Error(err)
 	// }
-	// err = db.Set("LastCalibrationTime", time.Now().UTC())
-	// if err != nil {
-	// 	logger.Error(err)
-	// }
+	err = db.Set("LastCalibrationTime", time.Now().UTC())
+	if err != nil {
+		logger.Error(err)
+	}
 	//.end
 
 	db.AddCalibration(

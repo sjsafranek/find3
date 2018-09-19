@@ -36,7 +36,6 @@ func main() {
 
 	aiPort := flag.String("ai", "8002", "port for the AI server")
 	port := flag.String("port", "8003", "port for the data (this) server")
-	debug := flag.Bool("debug", false, "turn on debug mode")
 	// mqttServer := flag.String("mqtt-server", "", "add MQTT server")
 	// mqttAdmin := flag.String("mqtt-admin", "admin", "name for mqtt admin")
 	// mqttPass := flag.String("mqtt-pass", "1234", "password for mqtt admin")
@@ -57,11 +56,6 @@ func main() {
 	// setup folders
 	database.DataFolder = dataFolder
 	api.DataFolder = dataFolder
-
-	// setup debugging
-	database.Debug(*debug)
-	api.Debug(*debug)
-	server.Debug(*debug)
 
 	// mqtt.Debug = *debug
 	//
