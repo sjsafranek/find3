@@ -1,6 +1,7 @@
 import json
 import sys
 import mmap
+import time
 
 import requests
 from tqdm import tqdm
@@ -21,3 +22,7 @@ print(fname)
 with open(fname, 'r') as f:
     for line in tqdm(f, total=get_num_lines(fname)):
         r = requests.post(server + "/data?justsave=0", data=line.strip())
+        if 200 != r.status_code:
+            print(r.text)
+            exit()
+        time.sleep(1.5)
