@@ -306,8 +306,8 @@ func (self *Database) GetCalibration() (CalibrationModel, error) {
 	// unmarshal outside of select to close database faster
 	err = json.Unmarshal([]byte(result), &calibration)
 
-	fmt.Println(result)
 	if nil != err {
+		fmt.Println(result)
 		panic(err)
 	}
 

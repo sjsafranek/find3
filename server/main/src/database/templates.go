@@ -36,7 +36,13 @@ var LOCATION_PREDICTION_SQL = `
 var CALIBRATION_SQL = `
 	'{'||
 		'"id": '|| id ||','||
-		'"probability_means": ' || probability_means ||','||
+		'"probability_means": ' ||
+			CASE
+			    WHEN probability_means IS NULL THEN 'null'
+			    WHEN ''=probability_means THEN 'null'
+			    ELSE probability_means
+			END
+		||','||
 		'"probabilities_of_best_guess": ' || probabilities_of_best_guess ||','||
 		'"percent_correct": ' || percent_correct ||','||
 		'"accuracy_breakdown": ' || accuracy_breakdown ||','||
