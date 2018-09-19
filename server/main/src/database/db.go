@@ -18,8 +18,8 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 
-	// _ "github.com/mattn/go-sqlite3"
-	"github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
+	// "github.com/mattn/go-sqlite3"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
 	"github.com/schollz/find4/server/main/src/models"
@@ -28,10 +28,10 @@ import (
 
 // MakeTables creates database tables and triggers.
 func (self *Database) MakeTables() (err error) {
-	logger.Log.Debugf("create database tables for %v", self.family)
+	logger.Debugf("create database tables for %v", self.family)
 	_, err = self.db.Exec(TABLES_SQL)
 	if err != nil {
-		logger.Log.Error(err)
+		logger.Error(err)
 		Fatal(err, "failed to create database tables")
 		return
 	}
@@ -39,7 +39,7 @@ func (self *Database) MakeTables() (err error) {
 }
 
 func (self *Database) queryRow(query string, scanner func(*sql.Row) error, args ...interface{}) error {
-	logger.Log.Trace(query)
+	logger.Trace(query)
 
 	stmt, err := self.db.Prepare(query)
 	if err != nil {
@@ -54,7 +54,7 @@ func (self *Database) queryRow(query string, scanner func(*sql.Row) error, args 
 
 // PrepareQuery runs the database Prepare method on the supplied query.
 func (self *Database) PrepareQuery(query string) (*sql.Stmt, error) {
-	logger.Log.Trace(query)
+	logger.Trace(query)
 	stmt, err := self.db.Prepare(query)
 	if err != nil {
 		panic(err)
@@ -135,10 +135,10 @@ func (self *Database) Select(clbk func(string, *Database) error) error {
 	defer reader.Close()
 
 	// run callback
-	logger.Log.Tracef("Running SELECT query %v", query_id)
+	logger.Tracef("Running SELECT query %v", query_id)
 	t1 := time.Now()
 	err = clbk(query_id, reader)
-	logger.Log.Tracef("Finished SELECT query %v %v", query_id, time.Since(t1))
+	logger.Tracef("Finished SELECT query %v %v", query_id, time.Since(t1))
 	return err
 }
 
@@ -169,7 +169,7 @@ func (self *Database) Insert(query string, executor func(*sql.Stmt) error) error
 }
 
 func (self *Database) insert(query_id string, query string, executor func(*sql.Stmt) error) error {
-	logger.Log.Tracef("%v %v", query_id, query)
+	logger.Tracef("%v %v", query_id, query)
 
 	tx, err := self.db.Begin()
 	if nil != err {
@@ -786,16 +786,8 @@ func (self *Database) DeleteLocation(location_id string) error {
 
 // Delete destroys database file
 func (self *Database) Delete() (err error) {
-	// logger.Log.Debugf("deleting %s", self.family)
+	// logger.Debugf("deleting %s", self.family)
 	return os.Remove(self.name)
-}
-
-func (self *Database) Debug(debugMode bool) {
-	if debugMode {
-		logger.SetLevel("trace")
-	} else {
-		logger.SetLevel("info")
-	}
 }
 
 // Close will close the database connection and remove the filelock.
@@ -807,7 +799,7 @@ func (self *Database) Close() (err error) {
 	err2 := self.db.Close()
 	if err2 != nil {
 		err = err2
-		logger.Log.Error(err)
+		logger.Error(err)
 	}
 	self.isClosed = true
 	return
@@ -826,7 +818,7 @@ func (self *Database) GetAllFromQuery(query string, args ...interface{}) ([]mode
 	// 	|| ']'
 	// `, query)
 
-	logger.Log.Trace(query)
+	logger.Trace(query)
 
 	s := []models.SensorData{}
 
@@ -900,9 +892,9 @@ func (self *Database) StartRequestQueue() {
 
 			t1 := time.Now()
 			query_id := self.getQId("w")
-			logger.Log.Tracef("Running INSERT query %v", query_id)
+			logger.Tracef("Running INSERT query %v", query_id)
 			request_func(query_id)
-			logger.Log.Tracef("Finished INSERT query %v %v", query_id, time.Since(t1))
+			logger.Tracef("Finished INSERT query %v %v", query_id, time.Since(t1))
 
 			self.LastInsertTime = time.Now()
 		}

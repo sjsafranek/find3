@@ -12,7 +12,7 @@ import (
 )
 
 func Dump(family string) (err error) {
-	defer logger.Log.Flush()
+	defer logger.Flush()
 	// gather the data
 	db, err := database.Open(family, true)
 	if err != nil {
@@ -66,6 +66,6 @@ func writeDatas(family string, name string, datas []models.SensorData) (err erro
 		f.Write([]byte("\n"))
 	}
 	f.Sync()
-	logger.Log.Infof("dumped data to %s", fname)
+	logger.Infof("dumped data to %s", fname)
 	return
 }

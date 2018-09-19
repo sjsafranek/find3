@@ -58,11 +58,11 @@ func init() {
 			}
 
 			if 0 != c {
-				logger.Log.Debugf("%v active databases", c)
+				logger.Debugf("%v active databases", c)
 				for family := range DATABASES {
 					pending := DATABASES[family].GetPending()
 					if 0 != pending {
-						logger.Log.Debugf("%v requests in %v queue", pending, family)
+						logger.Debugf("%v requests in %v queue", pending, family)
 					}
 				}
 			}
@@ -74,7 +74,7 @@ func init() {
 // Shutdown closes databases for a graceful shutdown
 func Shutdown() {
 	for family := range DATABASES {
-		logger.Log.Warnf("Closing %v database", family)
+		logger.Warnf("Closing %v database", family)
 		DATABASES[family].Close()
 	}
 }

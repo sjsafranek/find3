@@ -60,13 +60,13 @@ func DatabaseWorker(db *database.Database, family string) {
 		var last_calibration_time time.Time
 		err := db.Get("LastCalibrationTime", &last_calibration_time)
 		if nil != err {
-			logger.Log.Error(err)
+			logger.Error(err)
 			should_calibrate = true
 		}
 
 		ts, err := db.GetLastSensorInsertTimeWithLocationId()
 		if nil != err {
-			logger.Log.Error(err)
+			logger.Error(err)
 			should_calibrate = true
 		}
 
@@ -74,7 +74,7 @@ func DatabaseWorker(db *database.Database, family string) {
 			last_sensor_insert_timestamp = ts
 			if 2*time.Minute < last_sensor_insert_timestamp.Sub(last_calibration_time) {
 				should_calibrate = true
-				logger.Log.Debugf("New sensors found, calibrating %v", family)
+				logger.Debugf("New sensors found, calibrating %v", family)
 			}
 		}
 		//.end
@@ -82,14 +82,14 @@ func DatabaseWorker(db *database.Database, family string) {
 		// Compare sensor counts
 		current_sensor_count, err := db.NumDevicesWithLocation()
 		if nil != err {
-			logger.Log.Error(err)
+			logger.Error(err)
 			should_calibrate = true
 		}
 
 		if last_sensor_count != current_sensor_count {
 			last_sensor_count = current_sensor_count
 			should_calibrate = true
-			logger.Log.Debugf("Sensor counts don't match, calibrating %v", family)
+			logger.Debugf("Sensor counts don't match, calibrating %v", family)
 		}
 
 		if 0 == current_sensor_count {
@@ -103,17 +103,17 @@ func DatabaseWorker(db *database.Database, family string) {
 			// this will schedule calibration with the
 			// runing calibrationWorker processes.
 			calibration_queue <- func() {
-				logger.Log.Warnf("Calibrating %v...", family)
+				logger.Warnf("Calibrating %v...", family)
 				// if any errors occur they get swallowed
 				err := Calibrate(db, family, true)
 				if nil != err {
-					logger.Log.Error(err)
+					logger.Error(err)
 					return
 				}
-				logger.Log.Infof("Calibration for %v complete", family)
+				logger.Infof("Calibration for %v complete", family)
 			}
 		} else {
-			logger.Log.Debugf("Calibration not needed for %v", family)
+			logger.Debugf("Calibration not needed for %v", family)
 		}
 
 		time.Sleep(60 * time.Second)

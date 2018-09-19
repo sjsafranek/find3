@@ -34,18 +34,18 @@ func Calibrate(db *database.Database, family string, crossValidation ...bool) (e
 
 		// do the Golang naive bayes fitting
 		nb := nb1.New()
-		logger.Log.Debugf("naive bayes1 fitting")
+		logger.Debugf("naive bayes1 fitting")
 		errFit := nb.Fit(db, datasLearn)
 		if errFit != nil {
-			logger.Log.Error(errFit)
+			logger.Error(errFit)
 		}
 
 		// do the Golang naive bayes2 fitting
 		nbFit2 := nb2.New()
-		logger.Log.Debugf("naive bayes2 fitting")
+		logger.Debugf("naive bayes2 fitting")
 		errFit = nbFit2.Fit(db, datasLearn)
 		if errFit != nil {
-			logger.Log.Error(errFit)
+			logger.Error(errFit)
 		}
 
 		// do the python learning
@@ -114,12 +114,12 @@ func splitDataForLearning(datas []models.SensorData, crossValidation ...bool) (d
 					datasTestI++
 				}
 			}
-			logger.Log.Debugf("splitting %s data for cross validation (%d -> %d)", loc, numDataPoints, splitI)
+			logger.Debugf("splitting %s data for cross validation (%d -> %d)", loc, numDataPoints, splitI)
 		}
 
 		datasLearn = datasLearn[:datasLearnI]
 		datasTest = datasTest[:datasTestI]
-		logger.Log.Debugf("[%s]  learning: %d, testing: %d", datas[0].Family, len(datas), len(datasTest))
+		logger.Debugf("[%s]  learning: %d, testing: %d", datas[0].Family, len(datas), len(datasTest))
 	}
 	return
 }
@@ -136,7 +136,7 @@ func learnFromData(family string, datas []models.SensorData) (err error) {
 	p.Family = family
 	p.DataFolder = DataFolder
 
-	logger.Log.Debugf("[%s] writing data to %s", family, path.Join(p.DataFolder, p.CSVFile))
+	logger.Debugf("[%s] writing data to %s", family, path.Join(p.DataFolder, p.CSVFile))
 	err = dumpSensorsToCSV(datas, path.Join(p.DataFolder, p.CSVFile))
 	if err != nil {
 		return
@@ -162,9 +162,9 @@ func learnFromData(family string, datas []models.SensorData) (err error) {
 	}
 
 	if target.Success {
-		logger.Log.Debugf("success: %s", target.Message)
+		logger.Debugf("success: %s", target.Message)
 	} else {
-		logger.Log.Debugf("failure: %s", target.Message)
+		logger.Debugf("failure: %s", target.Message)
 		err = errors.New("failed in AI server: " + target.Message)
 	}
 	return
@@ -176,7 +176,7 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 		return
 	}
 	predictionAnalysis := make(map[string]map[string]map[string]int)
-	logger.Log.Debugf("[%s] finding best algorithm for %d data", datas[0].Family, len(datas))
+	logger.Debugf("[%s] finding best algorithm for %d data", datas[0].Family, len(datas))
 
 	t := time.Now()
 	type Job struct {
@@ -195,7 +195,7 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 			for job := range jobs {
 				aidata, err := AnalyzeSensorData(db, job.data)
 				if err != nil {
-					logger.Log.Warnf("%s: %+v", err.Error(), job.data)
+					logger.Warnf("%s: %+v", err.Error(), job.data)
 				}
 				results <- Result{data: aidata, i: job.i}
 			}
@@ -210,7 +210,7 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 		result := <-results
 		aidatas[result.i] = result.data
 	}
-	logger.Log.Infof("[%s] analyzed %d data in %s", datas[0].Family, len(datas), time.Since(t))
+	logger.Infof("[%s] analyzed %d data in %s", datas[0].Family, len(datas), time.Since(t))
 
 	for i, aidata := range aidatas {
 		for _, prediction := range aidata.Predictions {
@@ -225,12 +225,12 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 			}
 			correctLocation := datas[i].Location
 			if len(prediction.Locations) == 0 {
-				logger.Log.Warn("prediction.Locations is empty!")
+				logger.Warn("prediction.Locations is empty!")
 				continue
 			}
 			if len(aidata.LocationNames) == 0 {
 				err = errors.New("no location names")
-				logger.Log.Error(err)
+				logger.Error(err)
 				return
 			}
 
@@ -248,7 +248,7 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 		}
 		locationTotals[data.Location]++
 	}
-	logger.Log.Debugf("locationTotals: %+v", locationTotals)
+	logger.Debugf("locationTotals: %+v", locationTotals)
 	algorithmEfficacy = make(map[string]map[string]models.BinaryStats)
 	for alg := range predictionAnalysis {
 		if _, ok := algorithmEfficacy[alg]; !ok {
@@ -307,7 +307,7 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 			ProbabilitiesOfBestGuess[i] = -1 * bestGuess[0].Probability
 		}
 	}
-	logger.Log.Infof("[%s] total correct: %d/%d", datas[0].Family, correct, len(aidatas))
+	logger.Infof("[%s] total correct: %d/%d", datas[0].Family, correct, len(aidatas))
 
 	goodProbs := make([]float64, len(ProbabilitiesOfBestGuess))
 	i := 0
@@ -335,38 +335,38 @@ func findBestAlgorithm(db *database.Database, datas []models.SensorData) (algori
 
 	for loc := range accuracyBreakdown {
 		accuracyBreakdown[loc] = accuracyBreakdown[loc] / accuracyBreakdownTotal[loc]
-		logger.Log.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
+		logger.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
 	}
 
 	// // TODO
 	// // Insert batched
 	// err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("ProbabilitiesOfBestGuess", ProbabilitiesOfBestGuess)
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("PercentCorrect", float64(correct)/float64(len(datas)))
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("AccuracyBreakdown", accuracyBreakdown)
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("PredictionAnalysis", predictionAnalysis)
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("AlgorithmEfficacy", algorithmEfficacy)
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	// err = db.Set("LastCalibrationTime", time.Now().UTC())
 	// if err != nil {
-	// 	logger.Log.Error(err)
+	// 	logger.Error(err)
 	// }
 	//.end
 
@@ -404,7 +404,7 @@ func dumpSensorsToCSV(datas []models.SensorData, csvFile string) (err error) {
 		err = errors.New("data is empty")
 		return
 	}
-	logger.Log.Infof("[%s] dumping %d fingerprints to %s", datas[0].Family, len(datas), csvFile)
+	logger.Infof("[%s] dumping %d fingerprints to %s", datas[0].Family, len(datas), csvFile)
 	// open CSV file for writing
 	f, err := os.Create(csvFile)
 	if err != nil {

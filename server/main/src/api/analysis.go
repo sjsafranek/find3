@@ -83,7 +83,7 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 			aChan <- a{err: err}
 			return
 		}
-		logger.Log.Debugf("[%s] python classified %s", s.Family, time.Since(aiTime))
+		logger.Debugf("[%s] python classified %s", s.Family, time.Since(aiTime))
 		aChan <- a{err: err, aidata: target.Data}
 	}(aChan)
 
@@ -97,7 +97,7 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 		nb1Time := time.Now()
 		nb := nb1.New()
 		pl, err := nb.Classify(db, s)
-		logger.Log.Debugf("[%s] nb1 classified %s", s.Family, time.Since(nb1Time))
+		logger.Debugf("[%s] nb1 classified %s", s.Family, time.Since(nb1Time))
 		bChan <- b{pl: pl, err: err}
 	}(bChan)
 
@@ -111,14 +111,14 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 	// 	nb2Time := time.Now()
 	// 	nbLearned2 := nb2.New()
 	// 	pl, err := nbLearned2.Classify(s)
-	// 	logger.Log.Debugf("[%s] nb2 classified %s", s.Family, time.Since(nb2Time))
+	// 	logger.Debugf("[%s] nb2 classified %s", s.Family, time.Since(nb2Time))
 	// 	cChan <- c{pl: pl, err: err}
 	// }(cChan)
 
 	aResult := <-aChan
 	if aResult.err != nil || len(aResult.aidata.Predictions) == 0 {
 		err = errors.Wrap(aResult.err, "problem with machine learning")
-		logger.Log.Error(aResult.err)
+		logger.Error(aResult.err)
 		return
 	}
 	aidata = aResult.aidata
@@ -141,7 +141,7 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 		}
 		aidata.Predictions = append(aidata.Predictions, algPrediction)
 	} else {
-		logger.Log.Warnf("[%s] nb1 classify: %s", s.Family, bResult.err.Error())
+		logger.Warnf("[%s] nb1 classify: %s", s.Family, bResult.err.Error())
 	}
 
 	// // process nb2
@@ -157,7 +157,7 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 	// 	}
 	// 	aidata.Predictions = append(aidata.Predictions, algPrediction)
 	// } else {
-	// 	logger.Log.Warnf("[%s] nb2 classify: %s", s.Family, cResult.err.Error())
+	// 	logger.Warnf("[%s] nb2 classify: %s", s.Family, cResult.err.Error())
 	// }
 
 	// var algorithmEfficacy map[string]map[string]models.BinaryStats
@@ -165,7 +165,7 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 	// DEBUGGING
 	calibration, err := db.GetCalibration()
 	if err != nil {
-		logger.Log.Warn("could not get calibration")
+		logger.Warn("could not get calibration")
 	}
 	algorithmEfficacy := calibration.AlgorithmEfficacy
 	//.end
@@ -186,11 +186,11 @@ func AnalyzeSensorData(db *database.Database, s models.SensorData) (aidata model
 	go func() {
 		errInsert := db.AddPrediction(s.Timestamp, aidata.Guesses)
 		if errInsert != nil {
-			logger.Log.Errorf("[%s] problem inserting: %s", s.Family, errInsert.Error())
+			logger.Errorf("[%s] problem inserting: %s", s.Family, errInsert.Error())
 		}
 	}()
 
-	logger.Log.Debugf("[%s] analyzed in %s", s.Family, time.Since(startAnalyze))
+	logger.Debugf("[%s] analyzed in %s", s.Family, time.Since(startAnalyze))
 	return
 }
 
@@ -264,7 +264,7 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 
 	startTime := time.Now()
 	sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
-	logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
+	logger.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
 
 	startTime = time.Now()
 	preAnalyzed := make(map[int64][]models.LocationPrediction)
@@ -272,14 +272,14 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 	for _, sensor := range sensors {
 		a, errGet := db.GetPrediction(sensor.Timestamp)
 		if errGet != nil {
-			logger.Log.Error(errGet)
+			logger.Error(errGet)
 			continue
 		}
-		logger.Log.Infof("%v %v", sensor.Timestamp, a)
+		logger.Infof("%v %v", sensor.Timestamp, a)
 		preAnalyzed[sensor.Timestamp] = a
 		devicesToCheckMap[sensor.Device] = struct{}{}
 	}
-	logger.Log.Debugf("[%s] got predictions in map %s", family, time.Since(startTime))
+	logger.Debugf("[%s] got predictions in map %s", family, time.Since(startTime))
 
 	// get list of devices I care about
 	devicesToCheck := make([]string, len(devicesToCheckMap))
@@ -288,7 +288,7 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 		devicesToCheck[i] = device
 		i++
 	}
-	logger.Log.Debugf("[%s] found %d devices to check", family, len(devicesToCheck))
+	logger.Debugf("[%s] found %d devices to check", family, len(devicesToCheck))
 
 	startTime = time.Now()
 	if len(deviceCounts) == 0 {
@@ -298,7 +298,7 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 			return
 		}
 	}
-	logger.Log.Debugf("[%s] got device counts %s", family, time.Since(startTime))
+	logger.Debugf("[%s] got device counts %s", family, time.Since(startTime))
 
 	startTime = time.Now()
 	deviceFirstTime, err := db.GetDeviceFirstTimeFromDevices(devicesToCheck)
@@ -306,7 +306,7 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 		err = errors.Wrap(err, "problem getting device first time")
 		return
 	}
-	logger.Log.Debugf("[%s] got device first-time %s", family, time.Since(startTime))
+	logger.Debugf("[%s] got device first-time %s", family, time.Since(startTime))
 
 	var rollingData models.ReverseRollingData
 	errGotRollingData := db.Get("ReverseRollingData", &rollingData)
@@ -318,11 +318,11 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 			continue
 		}
 		if _, ok := deviceCounts[s.Device]; !ok {
-			logger.Log.Warnf("missing device counts for %s", s.Device)
+			logger.Warnf("missing device counts for %s", s.Device)
 			continue
 		}
 		if _, ok := deviceFirstTime[s.Device]; !ok {
-			logger.Log.Warnf("missing deviceFirstTime for %s", s.Device)
+			logger.Warnf("missing deviceFirstTime for %s", s.Device)
 			continue
 		}
 		if errGotRollingData == nil {
@@ -334,7 +334,7 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 		var a []models.LocationPrediction
 		if _, ok := preAnalyzed[s.Timestamp]; ok {
 			a = preAnalyzed[s.Timestamp]
-			logger.Log.Info("preAnalyzed")
+			logger.Info("preAnalyzed")
 		}
 
 		// if no results for LocationPrediction
@@ -345,13 +345,13 @@ func GetByLocation(db *database.Database, family string, minutesAgoInt int, show
 				return
 			}
 			a = aidata.Guesses
-			logger.Log.Info("AnalyzeSensorData")
+			logger.Info("AnalyzeSensorData")
 		}
 
 		// check for empty slice
 		if 0 == len(a) {
 			err2 := errors.New("Got empty slice")
-			logger.Log.Error(err2)
+			logger.Error(err2)
 			continue
 		}
 

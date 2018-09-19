@@ -33,8 +33,8 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 
 	if RETRY_LIMIT < attempt {
 		err := errors.New("retry limit reached")
-		logger.Log.Error(err)
-		logger.Log.Error(query)
+		logger.Error(err)
+		logger.Error(query)
 		return "", err
 	}
 
@@ -43,17 +43,17 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 		panic(err)
 	}
 	defer conn.Close()
-	logger.Log.Debug("got socket connection")
+	logger.Debug("got socket connection")
 
 	payload := fmt.Sprintf("%v\r\n", query)
 	fmt.Fprintf(conn, payload)
 
 	results, err := bufio.NewReader(conn).ReadString('\n')
 	if nil != err {
-		logger.Log.Error(err)
+		logger.Error(err)
 		attempt++
-		logger.Log.Warn("unable to read from socket")
-		logger.Log.Warn("removing socket from pool")
+		logger.Warn("unable to read from socket")
+		logger.Warn("removing socket from pool")
 		pc := conn.(*pool.PoolConn)
 		pc.MarkUnusable()
 		pc.Close()
@@ -69,13 +69,13 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 	//  - retry doesn't seem to address this
 	//  - find out why sockets stop responding...
 	if pc, ok := conn.(*pool.PoolConn); !ok {
-		logger.Log.Warn("socket is unusable, removing from pool")
+		logger.Warn("socket is unusable, removing from pool")
 		pc.MarkUnusable()
 		pc.Close()
 	}
 	// HACK
 	//  - close sockets every transaction...
-	// logger.Log.Warn("socket is unusable, removing from pool [TEST]")
+	// logger.Warn("socket is unusable, removing from pool [TEST]")
 	// pc := conn.(*pool.PoolConn)
 	// pc.MarkUnusable()
 	// pc.Close()
@@ -86,8 +86,8 @@ func aiSendAndRecieveWithRetry(query string, attempt int) (string, error) {
 func aiSendAndRecieve(query string) (string, error) {
 	// TODO
 	//  - block duplicate calls
-	logger.Log.Tracef("IN  %v", query)
-	logger.Log.Debug("sending message to ai server")
+	logger.Tracef("IN  %v", query)
+	logger.Debug("sending message to ai server")
 
 	ai_counter_lock.Lock()
 	AI_PENDING++
@@ -99,7 +99,7 @@ func aiSendAndRecieve(query string) (string, error) {
 	AI_PENDING--
 	ai_counter_lock.Unlock()
 
-	logger.Log.Tracef("OUT %v", results)
+	logger.Tracef("OUT %v", results)
 	return results, err
 }
 
@@ -110,7 +110,7 @@ func init() {
 			time.Sleep(10 * time.Second)
 			ai_counter_lock.RLock()
 			if 0 != AI_PENDING {
-				logger.Log.Debugf("%v pending AI requests", AI_PENDING)
+				logger.Debugf("%v pending AI requests", AI_PENDING)
 			}
 			ai_counter_lock.RUnlock()
 		}
@@ -119,6 +119,6 @@ func init() {
 }
 
 func Shutdown() {
-	logger.Log.Warn("Closing connection pool...")
+	logger.Warn("Closing connection pool...")
 	AI_POOL.Close()
 }

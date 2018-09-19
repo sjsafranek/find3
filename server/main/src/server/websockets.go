@@ -78,7 +78,7 @@ func websocketListener(family string, device string, conn *websocket.Conn) {
 				if _, ok2 := ws.connections[family+"-"+device][conn.RemoteAddr().String()]; ok2 {
 					delete(ws.connections[family+"-"+device], conn.RemoteAddr().String())
 				}
-				logger.Log.Debugf("removed %s/%s", family+"-"+device, conn.RemoteAddr().String())
+				logger.Debugf("removed %s/%s", family+"-"+device, conn.RemoteAddr().String())
 			}
 			ws.Unlock()
 			return
@@ -94,7 +94,7 @@ func SendMessageOverWebsockets(family string, device string, msg []byte) (err er
 		for _, conn := range ws.connections[family+"-"+device] {
 			err = conn.WriteMessage(1, msg)
 			if err != nil {
-				logger.Log.Warnf("problem sending websocket: %s/%s", family+"-"+device)
+				logger.Warnf("problem sending websocket: %s/%s", family+"-"+device)
 			}
 		}
 	}
